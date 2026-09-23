@@ -47,6 +47,7 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install --upgrade pip
 pip install -r requirements.txt
+pip install -e .
 ```
 
 ## 4. Verifikasi device
@@ -110,7 +111,17 @@ tidak perlu ketik flag panjang tiap kali.
   punya dukungan operator yang lebih terbatas dibanding CPU/GPU — kalau
   suatu kombinasi model+device gagal di NPU, itu tercatat sebagai baris
   `inference_failed` di CSV (bukan meng-crash seluruh benchmark), lihat
-  kolom `error` untuk detail.
+  kolom `error` untuk detail. Setiap kombinasi dijalankan di proses
+  terpisah, jadi crash native (segfault) di plugin GPU/NPU pun hanya
+  tercatat sebagai baris `crashed` dan benchmark lanjut ke kombinasi
+  berikutnya.
+- **Lokasi file**: bobot `.pt` diunduh ke `models/weights/`, hasil export
+  OpenVINO ke `models/<family>/<size>/<presisi>_openvino_model/`, dataset
+  coco128 ke `data/`, dan output validasi ke `results/runs/`. Project ini
+  memakai setting ultralytics sendiri (`data/ultralytics_config/`), jadi
+  setting ultralytics global di komputermu tidak diubah.
+- **Benchmark di laptop/mesin lain**: colok ke listrik dan pakai power mode
+  performa — di mode baterai CPU/GPU di-throttle dan FPS jauh lebih rendah.
 - **mAP di sini indikatif, bukan angka paper-comparable** — kalibrasi INT8
   dan validasi memakai subset COCO kecil (`coco128.yaml`) untuk mempercepat
   run, jadi gunakan angkanya untuk **perbandingan relatif** antar
