@@ -38,7 +38,7 @@ Display adapters) dan *Intel(R) AI Boost* (di Neural processors).
 
 ## Tahap 2 — Ambil kode & setup environment
 
-1. Install **Python 3.12** dari https://www.python.org/downloads/ —
+1. Install **Python 3.12** dari <https://www.python.org/downloads/> —
    centang **"Add python.exe to PATH"**.
 
    ```powershell
@@ -65,7 +65,7 @@ Display adapters) dan *Intel(R) AI Boost* (di Neural processors).
 
 **Cek lolos:** baris terakhir setup menampilkan
 
-```
+```text
 Available OpenVINO devices: ['CPU', 'GPU', 'NPU']
 ```
 
@@ -186,7 +186,7 @@ Setelah selesai, salin summary seperti di Tahap 4 dengan nama berbeda.
 `results/benchmark_summary.csv` — satu baris per model × presisi × device.
 
 | Kolom | Arti |
-|---|---|
+| --- | --- |
 | `fps_mean` | Rata-rata FPS (lebih tinggi lebih baik) |
 | `latency_ms_mean`, `latency_ms_p95` | Latensi rata-rata dan persentil-95 per gambar |
 | `map50_95`, `map50` | Akurasi di coco128 — **indikatif**, hanya untuk perbandingan relatif antar device/presisi |
@@ -195,7 +195,7 @@ Setelah selesai, salin summary seperti di Tahap 4 dengan nama berbeda.
 | `error` | Pesan error kalau gagal |
 
 | Status | Arti | Tindakan |
-|---|---|---|
+| --- | --- | --- |
 | `ok` | Berhasil | — |
 | `export_failed` | Gagal konversi ke OpenVINO (semua device untuk model+presisi itu ikut dilewati) | Cek kolom `error`; biasanya masalah dependency |
 | `inference_failed` | Model gagal jalan di device itu (sering: operator tidak didukung NPU) | Wajar untuk NPU; catat sebagai temuan |
@@ -229,7 +229,7 @@ Hal yang menarik dibandingkan:
 ## Troubleshooting
 
 | Gejala | Penyebab & solusi |
-|---|---|
+| --- | --- |
 | `scripts\setup_env.ps1 cannot be loaded ... running scripts is disabled` | Jalankan dengan `powershell -ExecutionPolicy Bypass -File scripts\setup_env.ps1` |
 | `ModuleNotFoundError: No module named 'yolobench'` | Paket belum terinstal: `.venv\Scripts\python.exe -m pip install -e .` |
 | `GPU` / `NPU` tidak ada di daftar device | Driver belum terinstal / perlu restart (Tahap 1) |
