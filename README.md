@@ -92,6 +92,15 @@ ditulis ke `results/raw/<timestamp>.json` begitu selesai, jadi kalau
 terhenti di tengah jalan (Ctrl+C, listrik mati, dll), hasil yang sudah
 selesai tidak hilang.
 
+Untuk menyiapkan semua model di awal (download bobot + dataset dan export
+semua presisi, tanpa benchmark), tambahkan `--prepare`. Hasilnya di
+`models/` dan `data/` bisa di-copy ke mesin lain lalu dibenchmark offline —
+lihat [TEST_STEP.md](TEST_STEP.md) Tahap 2b.
+
+```powershell
+.venv\Scripts\python.exe -m yolobench.benchmark --prepare --sizes n,s,m,l,x --precisions fp32,fp16,int8
+```
+
 Semua opsi bisa juga diatur permanen lewat `configs/benchmark.yaml` supaya
 tidak perlu ketik flag panjang tiap kali.
 

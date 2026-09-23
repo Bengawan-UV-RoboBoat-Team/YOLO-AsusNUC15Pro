@@ -3,6 +3,7 @@
 Usage:
     python -m yolobench.benchmark
     python -m yolobench.benchmark --sizes n,s --precisions fp32,int8 --devices CPU,NPU
+    python -m yolobench.benchmark --prepare   # download + export only, no benchmark
 """
 
 from __future__ import annotations
@@ -67,6 +68,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup-iters", type=int, default=None)
     parser.add_argument("--timed-iters", type=int, default=None)
     parser.add_argument("--force-export", action="store_true")
+    parser.add_argument(
+        "--prepare",
+        action="store_true",
+        help="Only download weights + dataset and export every model/precision, without benchmarking. "
+        "Copy models/ and data/ afterwards to benchmark on another machine offline.",
+    )
     return parser.parse_args()
 
 
@@ -122,6 +129,38 @@ def _run_isolated(
             return _failed_result(spec, precision, device_key, ov_device_name, "crashed", error)
 
 
+def _prepare(
+    specs: list[discovery.ModelSpec], precisions: list[str], dataset: str, imgsz: int, force_export: bool
+) -> None:
+    """Fetch everything a benchmark run needs from the internet up front:
+    the validation dataset (+ the plotting font val downloads with it), each
+    model's .pt weights and its OpenVINO exports. OpenVINO IR is
+    device-agnostic, so the resulting models/ and data/ folders can be copied
+    to the target machine and benchmarked there without network access.
+    """
+    from ultralytics.data.utils import check_det_dataset
+
+    print(f"[prepare] dataset {dataset}")
+    check_det_dataset(dataset)
+
+    failed: list[str] = []
+    total = len(specs) * len(precisions)
+    idx = 0
+    for spec in specs:
+        for precision in precisions:
+            idx += 1
+            try:
+                ov_dir = export_openvino(spec, precision, imgsz=imgsz, calib_data=dataset, force=force_export)
+                print(f"[prepare {idx}/{total}] {spec.weights_name} / {precision}: ok -> {ov_dir}")
+            except ExportError as exc:
+                print(f"[prepare {idx}/{total}] {spec.weights_name} / {precision}: FAILED - {exc}")
+                failed.append(f"{spec.weights_name} / {precision}")
+
+    print(f"\n[prepare] done: {total - len(failed)}/{total} export(s) ready in models/, dataset in data/.")
+    if failed:
+        print(f"[prepare] failed (re-run --prepare to retry just these): {', '.join(failed)}")
+
+
 def main() -> None:
     args = _parse_args()
     cfg = _load_config(args.config)
@@ -146,6 +185,10 @@ def main() -> None:
     skipped = [s.weights_name for s in all_specs if s not in specs]
     if skipped:
         print(f"[benchmark] not run (filtered out by families/sizes): {', '.join(skipped)}")
+
+    if args.prepare:
+        _prepare(specs, precisions, dataset, imgsz, force_export)
+        return
 
     detected = devices_mod.probe_openvino_devices()
     resolved_devices = devices_mod.resolve_run_devices(requested_devices)
