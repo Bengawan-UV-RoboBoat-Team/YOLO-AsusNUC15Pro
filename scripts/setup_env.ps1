@@ -36,6 +36,9 @@ Write-Host "[setup] upgrading pip"
 Write-Host "[setup] installing requirements.txt"
 & $venvPython -m pip install -r requirements.txt
 
+Write-Host "[setup] installing yolobench (editable) so 'python -m yolobench.benchmark' works"
+& $venvPython -m pip install -e .
+
 Write-Host "[setup] verifying OpenVINO device visibility"
 & $venvPython -c "from openvino import Core; c = Core(); print('Available OpenVINO devices:', c.available_devices)"
 

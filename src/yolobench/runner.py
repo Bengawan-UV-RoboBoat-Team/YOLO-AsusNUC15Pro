@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .devices import TARGET_DEVICES
 from .discovery import ModelSpec, get_ultralytics_version
+from .export import OPENVINO_DIR_SUFFIX
 
 
 @dataclass
@@ -61,11 +62,11 @@ def run_one(
     n_warmup: int = 10,
     n_timed: int = 100,
 ) -> RunResult:
-    """Benchmark one exported OpenVINO model on one device. Never raises —
+    """Benchmark one exported OpenVINO model on one device. Never raises;
     failures are captured in the returned RunResult so one bad combo (e.g.
     an op the NPU plugin rejects) doesn't abort the rest of the sweep.
     """
-    precision = ov_model_dir.name.replace("openvino_", "")
+    precision = ov_model_dir.name.removesuffix(OPENVINO_DIR_SUFFIX)
     base = dict(
         family=spec.family,
         variant=spec.variant,

@@ -3,12 +3,17 @@
 Usage:
     python -m yolobench.benchmark
     python -m yolobench.benchmark --sizes n,s --precisions fp32,int8 --devices CPU,NPU
+    python -m yolobench.benchmark --prepare   # download + export only, no benchmark
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing
+import os
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,12 +21,32 @@ import yaml
 
 from . import devices as devices_mod
 from . import discovery, report
-from .export import ExportError, export_openvino
+from .export import OPENVINO_DIR_SUFFIX, ExportError, export_openvino
 from .runner import RunResult, run_one
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = PROJECT_ROOT / "configs" / "benchmark.yaml"
 RESULTS_DIR = PROJECT_ROOT / "results"
+DATA_DIR = PROJECT_ROOT / "data"
+
+# Give ultralytics a project-local settings file so datasets (coco128) land in
+# data/ and val runs in results/runs/, without touching the user's global
+# ultralytics settings. Must be set before ultralytics is first imported, and
+# the directory must already exist or ultralytics falls back to /tmp.
+_ULTRALYTICS_CONFIG_DIR = DATA_DIR / "ultralytics_config"
+_ULTRALYTICS_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("YOLO_CONFIG_DIR", str(_ULTRALYTICS_CONFIG_DIR))
+
+
+def _configure_ultralytics() -> None:
+    import ultralytics.data.utils as ul_data_utils
+    from ultralytics import settings
+
+    settings.update({"datasets_dir": str(DATA_DIR), "runs_dir": str(RESULTS_DIR / "runs")})
+    # ultralytics snapshots datasets_dir into a module constant at import
+    # time, so on the very first run the update above only takes effect
+    # from the next process on - patch the constant for this one too.
+    ul_data_utils.DATASETS_DIR = DATA_DIR
 
 
 def _load_config(path: Path) -> dict:
@@ -43,6 +68,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup-iters", type=int, default=None)
     parser.add_argument("--timed-iters", type=int, default=None)
     parser.add_argument("--force-export", action="store_true")
+    parser.add_argument(
+        "--prepare",
+        action="store_true",
+        help="Only download weights + dataset and export every model/precision, without benchmarking. "
+        "Copy models/ and data/ afterwards to benchmark on another machine offline.",
+    )
     return parser.parse_args()
 
 
@@ -55,6 +86,79 @@ def _sample_image() -> str:
     raise FileNotFoundError(
         "Could not find ultralytics' bundled sample image (assets/bus.jpg) for timing runs."
     )
+
+
+def _failed_result(
+    spec: discovery.ModelSpec, precision: str, device_key: str, ov_device_name: str, status: str, error: str
+) -> RunResult:
+    return RunResult(
+        family=spec.family,
+        variant=spec.variant,
+        precision=precision,
+        device_key=device_key,
+        ov_device_name=ov_device_name,
+        status=status,
+        error=error,
+        fps_mean=None,
+        latency_ms_mean=None,
+        latency_ms_p95=None,
+        map50_95=None,
+        map50=None,
+        model_size_mb=None,
+        ultralytics_version=discovery.get_ultralytics_version(),
+        timestamp=datetime.now(timezone.utc).isoformat(),
+    )
+
+
+def _run_isolated(
+    spec: discovery.ModelSpec, ov_dir: Path, device_key: str, ov_device_name: str, *args, **kwargs
+) -> RunResult:
+    """Run `run_one` in a fresh child process. OpenVINO GPU/NPU plugins can
+    crash natively (segfault) on unsupported models, which no try/except can
+    catch - isolating each combo turns that into a "crashed" row instead of
+    killing the whole sweep. It also stops one run's device state (compiled
+    model caches, memory) from leaking into the next measurement.
+    """
+    with ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn")) as pool:
+        future = pool.submit(run_one, spec, ov_dir, device_key, ov_device_name, *args, **kwargs)
+        try:
+            return future.result()
+        except BrokenProcessPool:
+            precision = ov_dir.name.removesuffix(OPENVINO_DIR_SUFFIX)
+            error = "process crashed (native OpenVINO/driver fault, e.g. segfault)"
+            return _failed_result(spec, precision, device_key, ov_device_name, "crashed", error)
+
+
+def _prepare(
+    specs: list[discovery.ModelSpec], precisions: list[str], dataset: str, imgsz: int, force_export: bool
+) -> None:
+    """Fetch everything a benchmark run needs from the internet up front:
+    the validation dataset (+ the plotting font val downloads with it), each
+    model's .pt weights and its OpenVINO exports. OpenVINO IR is
+    device-agnostic, so the resulting models/ and data/ folders can be copied
+    to the target machine and benchmarked there without network access.
+    """
+    from ultralytics.data.utils import check_det_dataset
+
+    print(f"[prepare] dataset {dataset}")
+    check_det_dataset(dataset)
+
+    failed: list[str] = []
+    total = len(specs) * len(precisions)
+    idx = 0
+    for spec in specs:
+        for precision in precisions:
+            idx += 1
+            try:
+                ov_dir = export_openvino(spec, precision, imgsz=imgsz, calib_data=dataset, force=force_export)
+                print(f"[prepare {idx}/{total}] {spec.weights_name} / {precision}: ok -> {ov_dir}")
+            except ExportError as exc:
+                print(f"[prepare {idx}/{total}] {spec.weights_name} / {precision}: FAILED - {exc}")
+                failed.append(f"{spec.weights_name} / {precision}")
+
+    print(f"\n[prepare] done: {total - len(failed)}/{total} export(s) ready in models/, dataset in data/.")
+    if failed:
+        print(f"[prepare] failed (re-run --prepare to retry just these): {', '.join(failed)}")
 
 
 def main() -> None:
@@ -71,12 +175,20 @@ def main() -> None:
     n_timed = args.timed_iters or cfg.get("timed_iters") or 100
     force_export = args.force_export or bool(cfg.get("force_export"))
 
+    _configure_ultralytics()
     print(f"[benchmark] ultralytics {discovery.get_ultralytics_version()}")
     all_specs = discovery.discover_models()
     specs = discovery.filter_specs(all_specs, families=families, sizes=sizes)
     print(f"[benchmark] discovered {len(all_specs)} model(s), running {len(specs)} after filtering:")
     for spec in specs:
         print(f"  - {spec.weights_name} ({spec.source})")
+    skipped = [s.weights_name for s in all_specs if s not in specs]
+    if skipped:
+        print(f"[benchmark] not run (filtered out by families/sizes): {', '.join(skipped)}")
+
+    if args.prepare:
+        _prepare(specs, precisions, dataset, imgsz, force_export)
+        return
 
     detected = devices_mod.probe_openvino_devices()
     resolved_devices = devices_mod.resolve_run_devices(requested_devices)
@@ -104,32 +216,14 @@ def main() -> None:
             except ExportError as exc:
                 combo_idx += len(resolved_devices)
                 print(f"[{combo_idx}/{total_combos}] {spec.weights_name} / {precision}: EXPORT FAILED - {exc}")
-                results.append(
-                    RunResult(
-                        family=spec.family,
-                        variant=spec.variant,
-                        precision=precision,
-                        device_key="N/A",
-                        ov_device_name="",
-                        status="export_failed",
-                        error=str(exc),
-                        fps_mean=None,
-                        latency_ms_mean=None,
-                        latency_ms_p95=None,
-                        map50_95=None,
-                        map50=None,
-                        model_size_mb=None,
-                        ultralytics_version=discovery.get_ultralytics_version(),
-                        timestamp=datetime.now(timezone.utc).isoformat(),
-                    )
-                )
+                results.append(_failed_result(spec, precision, "N/A", "", "export_failed", str(exc)))
                 flush()
                 continue
 
             for device_key in resolved_devices:
                 combo_idx += 1
                 print(f"[{combo_idx}/{total_combos}] {spec.weights_name} / {precision} / {device_key} ...")
-                result = run_one(
+                result = _run_isolated(
                     spec,
                     ov_dir,
                     device_key,

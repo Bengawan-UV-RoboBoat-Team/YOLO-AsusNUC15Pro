@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yolobench"
+version = "0.1.0"
+description = "Benchmark YOLO models across CPU/iGPU/NPU via OpenVINO on Intel hardware."
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+where = ["src"]
