@@ -1,0 +1,33 @@
+# Default benchmark run configuration. Every key here can be overridden by
+# a matching CLI flag on `python -m yolobench.benchmark` for one-off runs.
+
+# COCO validation subset used both for mAP scoring and INT8 calibration.
+# Small on purpose (fast); results are for relative CPU/iGPU/NPU comparison,
+# not paper-comparable absolute mAP.
+dataset: coco128.yaml
+imgsz: 640
+
+# Leave empty (null) to include every YOLO family the installed `ultralytics`
+# package supports (discovered dynamically — new releases need no edit here).
+families: null
+
+# Only the smallest scales by default so a first run finishes quickly.
+# Override with --sizes n,s,m,l,x for a fuller sweep.
+sizes:
+  - n
+  - s
+
+precisions:
+  - fp32
+  - int8
+
+# Devices to attempt; anything not physically detected via OpenVINO is
+# skipped automatically, so leaving all three here is safe on any machine.
+devices:
+  - CPU
+  - GPU
+  - NPU
+
+warmup_iters: 10
+timed_iters: 100
+force_export: false

@@ -1,0 +1,16 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Downloaded weights & exported models
+models/**
+!models/.gitkeep
+
+# Dataset cache
+data/**
+!data/.gitkeep
+
+# Raw per-run results (keep the aggregated summary CSV tracked)
+results/raw/**
+!results/raw/.gitkeep
