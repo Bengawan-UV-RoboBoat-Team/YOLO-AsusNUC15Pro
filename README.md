@@ -16,7 +16,7 @@ lewat OpenVINO.
 
 ## 2. Instal Python
 
-Direkomendasikan **Python 3.10-3.12**. Hindari Python 3.13+ untuk saat ini karena
+Direkomendasikan **Python 3.10–3.12**. Hindari Python 3.13+ untuk saat ini karena
 wheel `openvino`/`nncf` di PyPI kadang belum tersedia untuk versi Python
 paling baru. Cek versi yang terinstall:
 
