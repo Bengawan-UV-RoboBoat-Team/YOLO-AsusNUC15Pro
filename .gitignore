@@ -20,3 +20,6 @@ results/raw/**
 *_openvino_model/
 results/runs/
 *.egg-info/
+
+# Dumped by the Intel GPU kernel compiler on driver-side compile errors
+kernel.errors.txt
