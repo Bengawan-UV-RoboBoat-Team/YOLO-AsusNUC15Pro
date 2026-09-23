@@ -9,6 +9,9 @@ from .discovery import ModelSpec
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MODELS_DIR = PROJECT_ROOT / "models"
+# Pretrained .pt checkpoints are downloaded here (ultralytics fetches a
+# missing checkpoint to whatever path it is given) instead of into the cwd.
+WEIGHTS_DIR = MODELS_DIR / "weights"
 
 
 class ExportError(RuntimeError):
@@ -16,8 +19,17 @@ class ExportError(RuntimeError):
     structured failure row instead of crashing the whole benchmark run."""
 
 
+# Ultralytics only recognises an OpenVINO IR directory as a loadable model
+# when its name ends in "_openvino_model", so the precision goes in front.
+OPENVINO_DIR_SUFFIX = "_openvino_model"
+
+# `quantize` export argument per precision (ultralytics >= 8.4 replaced the
+# old `half` / `int8` flags with this single argument).
+_QUANTIZE = {"fp32": 32, "fp16": 16, "int8": 8}
+
+
 def _export_dir(spec: ModelSpec, precision: str) -> Path:
-    return MODELS_DIR / spec.family / (spec.variant or "base") / f"openvino_{precision}"
+    return MODELS_DIR / spec.family / (spec.variant or "base") / f"{precision}{OPENVINO_DIR_SUFFIX}"
 
 
 def export_openvino(
@@ -47,10 +59,9 @@ def export_openvino(
         raise ExportError(f"{spec.weights_name}: ultralytics is not installed ({exc})") from exc
 
     try:
-        model = YOLO(spec.weights_name)
-        export_kwargs = {"format": "openvino", "imgsz": imgsz, "half": precision == "fp16"}
+        model = YOLO(str(WEIGHTS_DIR / spec.weights_name))
+        export_kwargs = {"format": "openvino", "imgsz": imgsz, "quantize": _QUANTIZE[precision]}
         if precision == "int8":
-            export_kwargs["quantize"] = 8
             export_kwargs["data"] = calib_data
         exported_path = Path(model.export(**export_kwargs))
     except ExportError:

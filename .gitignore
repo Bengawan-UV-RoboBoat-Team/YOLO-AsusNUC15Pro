@@ -14,3 +14,9 @@ data/**
 # Raw per-run results (keep the aggregated summary CSV tracked)
 results/raw/**
 !results/raw/.gitkeep
+
+# Stray checkpoints / exports if ultralytics is run outside the benchmark
+*.pt
+*_openvino_model/
+results/runs/
+*.egg-info/
