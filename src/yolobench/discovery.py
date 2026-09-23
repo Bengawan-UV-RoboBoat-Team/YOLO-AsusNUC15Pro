@@ -71,7 +71,10 @@ def discover_pretrained_checkpoints() -> list[ModelSpec]:
     seen: set[str] = set()
     for name in names:
         stem = Path(name).stem
-        if not stem.lower().startswith("yolo") or _is_excluded(stem):
+        # Plain detectors are named "<family><scale>" (yolo11n, yolov5su).
+        # Anything with an extra "-suffix" is a specialised head or variant
+        # (-depth, -reid, -sem, -pose-p6, -grayscale, ...), not a COCO detector.
+        if not _FAMILY_VARIANT_RE.match(stem.lower()) or _is_excluded(stem):
             continue
         weights_name = f"{stem}.pt"
         if weights_name in seen:
@@ -125,6 +128,23 @@ def discover_models() -> list[ModelSpec]:
     return sorted(unique, key=lambda s: (s.family, s.variant))
 
 
+# Scale names that differ from the usual n/s/m/l/x, mapped to the scale they
+# correspond to so a `--sizes n` filter doesn't silently drop them:
+# YOLOv9 names its smallest scale "t" (tiny) instead of "n".
+_SIZE_ALIASES = {"t": "n"}
+
+
+def normalized_size(variant: str) -> str:
+    """Map a variant suffix to its plain scale letter for size filtering,
+    e.g. "nu" (ultralytics' anchor-free YOLOv5/v3 retrains) -> "n",
+    "t" (YOLOv9 tiny) -> "n". The weights filename is left untouched.
+    """
+    size = variant.lower()
+    if len(size) > 1 and size.endswith("u"):
+        size = size[:-1]
+    return _SIZE_ALIASES.get(size, size)
+
+
 def filter_specs(
     specs: list[ModelSpec],
     families: list[str] | None = None,
@@ -137,5 +157,5 @@ def filter_specs(
         result = [s for s in result if s.family.lower() in wanted]
     if sizes:
         wanted_sizes = {sz.lower() for sz in sizes}
-        result = [s for s in result if s.variant.lower() in wanted_sizes]
+        result = [s for s in result if normalized_size(s.variant) in wanted_sizes]
     return result

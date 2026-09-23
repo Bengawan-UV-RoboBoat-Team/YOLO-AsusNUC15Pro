@@ -1,0 +1,2 @@
+family,variant,precision,device_key,ov_device_name,status,fps_mean,latency_ms_mean,latency_ms_p95,map50_95,map50,model_size_mb,ultralytics_version,timestamp,error
+yolov8,n,fp16,CPU,11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz,ok,12.04,83.048,107.529,0.4509,0.604,6.364,8.4.160,2026-09-23T16:44:36.040670+00:00,
