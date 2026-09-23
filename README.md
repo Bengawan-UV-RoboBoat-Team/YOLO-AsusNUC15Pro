@@ -1,7 +1,7 @@
-# YOLO Benchmark — Asus NUC 15 Pro
+# YOLO Benchmark: Asus NUC 15 Pro
 
 Benchmark semua versi model YOLO yang didukung package `ultralytics`
-(otomatis terdeteksi — dari YOLOv5 sampai versi terbaru seperti YOLO26/27,
+(otomatis terdeteksi, dari YOLOv5 sampai versi terbaru seperti YOLO26/27,
 tanpa perlu update kode saat rilis baru muncul) di tiga target hardware
 Intel Core Ultra pada NUC 15 Pro ini: **CPU**, **iGPU Arc**, dan **NPU**,
 lewat OpenVINO.
@@ -9,14 +9,14 @@ lewat OpenVINO.
 ## 1. Prasyarat
 
 - Windows 11 di Asus NUC 15 Pro (chip Intel Core Ultra).
-- Hak admin untuk instal driver Intel Arc (iGPU) dan Intel NPU — dua driver
-  ini **terpisah**, jangan cuma instal driver grafis standar dan
+- Hak admin untuk instal driver Intel Arc (iGPU) dan Intel NPU. Dua driver
+  ini **terpisah**, jadi jangan cuma instal driver grafis standar dan
   mengasumsikan NPU otomatis ikut. Cari "Intel NPU Driver" di halaman
   download Intel untuk chip yang sesuai.
 
 ## 2. Instal Python
 
-Direkomendasikan **Python 3.10–3.12**. Hindari Python 3.13+ untuk saat ini —
+Direkomendasikan **Python 3.10–3.12**. Hindari Python 3.13+ untuk saat ini karena
 wheel `openvino`/`nncf` di PyPI kadang belum tersedia untuk versi Python
 paling baru. Cek versi yang terinstall:
 
@@ -63,7 +63,7 @@ saja:
 - Setelah driver Intel Arc terinstall dan terbaru: `['CPU', 'GPU']`.
 - Setelah driver NPU terinstall: `['CPU', 'GPU', 'NPU']`.
 
-Kalau `GPU` atau `NPU` tidak muncul, benchmark tetap jalan normal — device
+Kalau `GPU` atau `NPU` tidak muncul, benchmark tetap jalan normal: device
 yang tidak terdeteksi otomatis di-skip (bukan error), tapi tentu saja tidak
 akan ada hasil untuk device tersebut sampai drivernya diinstal.
 
@@ -87,15 +87,15 @@ Contoh run yang lebih spesifik:
 ```
 
 Full sweep bisa berjalan lama (bisa berjam-jam tergantung jumlah model).
-Aman ditinggal — setiap kombinasi (model × presisi × device) langsung
+Aman ditinggal karena setiap kombinasi (model × presisi × device) langsung
 ditulis ke `results/raw/<timestamp>.json` begitu selesai, jadi kalau
 terhenti di tengah jalan (Ctrl+C, listrik mati, dll), hasil yang sudah
 selesai tidak hilang.
 
 Untuk menyiapkan semua model di awal (download bobot + dataset dan export
 semua presisi, tanpa benchmark), tambahkan `--prepare`. Hasilnya di
-`models/` dan `data/` bisa di-copy ke mesin lain lalu dibenchmark offline —
-lihat [TEST_STEP.md](TEST_STEP.md) Tahap 2b.
+`models/` dan `data/` bisa di-copy ke mesin lain lalu dibenchmark offline
+(lihat [TEST_STEP.md](TEST_STEP.md) Tahap 2b).
 
 ```powershell
 .venv\Scripts\python.exe -m yolobench.benchmark --prepare --sizes n,s,m,l,x --precisions fp32,fp16,int8
@@ -106,18 +106,18 @@ tidak perlu ketik flag panjang tiap kali.
 
 ## 6. Membaca hasil
 
-- **`results/benchmark_summary.csv`** — satu baris per kombinasi
+- **`results/benchmark_summary.csv`**: satu baris per kombinasi
   (model × presisi × device), berisi `fps_mean`, `latency_ms_mean`,
   `latency_ms_p95`, `map50_95`, `map50`, `model_size_mb`, `status`, dan
   `error` (kalau gagal).
 - Di akhir run, terminal juga menampilkan tabel ringkasan pivot: baris =
   model, kolom = device, isi = FPS rata-rata (dan tabel kedua untuk mAP).
-- `results/raw/<timestamp>.json` — data mentah per run untuk audit/histori.
+- `results/raw/<timestamp>.json`: data mentah per run untuk audit/histori.
 
 ## 7. Catatan penting
 
 - **NPU** OpenVINO umumnya butuh model **INT8** untuk performa terbaik, dan
-  punya dukungan operator yang lebih terbatas dibanding CPU/GPU — kalau
+  punya dukungan operator yang lebih terbatas dibanding CPU/GPU. Kalau
   suatu kombinasi model+device gagal di NPU, itu tercatat sebagai baris
   `inference_failed` di CSV (bukan meng-crash seluruh benchmark), lihat
   kolom `error` untuk detail. Setiap kombinasi dijalankan di proses
@@ -130,14 +130,14 @@ tidak perlu ketik flag panjang tiap kali.
   memakai setting ultralytics sendiri (`data/ultralytics_config/`), jadi
   setting ultralytics global di komputermu tidak diubah.
 - **Benchmark di laptop/mesin lain**: colok ke listrik dan pakai power mode
-  performa — di mode baterai CPU/GPU di-throttle dan FPS jauh lebih rendah.
-- **mAP di sini indikatif, bukan angka paper-comparable** — kalibrasi INT8
+  performa, karena di mode baterai CPU/GPU di-throttle dan FPS jauh lebih rendah.
+- **mAP di sini indikatif, bukan angka paper-comparable**: kalibrasi INT8
   dan validasi memakai subset COCO kecil (`coco128.yaml`) untuk mempercepat
   run, jadi gunakan angkanya untuk **perbandingan relatif** antar
   device/presisi pada mesin ini, bukan untuk dibandingkan ke angka mAP resmi
   di paper/model card.
 - Dukungan NPU OpenVINO menurut dokumentasi Ultralytics mensyaratkan chip
-  **Intel Core Ultra Series 2xxV / 3xx ke atas** — NUC 15 Pro kemungkinan
+  **Intel Core Ultra Series 2xxV / 3xx ke atas**: NUC 15 Pro kemungkinan
   besar memenuhi ini, tapi tetap verifikasi lewat langkah 4 di atas karena
   belum dipastikan dari sini secara pasti driver NPU sudah terpasang
   default di image Windows NUC ini.

@@ -62,7 +62,7 @@ def run_one(
     n_warmup: int = 10,
     n_timed: int = 100,
 ) -> RunResult:
-    """Benchmark one exported OpenVINO model on one device. Never raises —
+    """Benchmark one exported OpenVINO model on one device. Never raises;
     failures are captured in the returned RunResult so one bad combo (e.g.
     an op the NPU plugin rejects) doesn't abort the rest of the sweep.
     """

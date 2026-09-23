@@ -8,7 +8,7 @@ dataset: coco128.yaml
 imgsz: 640
 
 # Leave empty (null) to include every YOLO family the installed `ultralytics`
-# package supports (discovered dynamically — new releases need no edit here).
+# package supports (discovered dynamically; new releases need no edit here).
 families: null
 
 # Only the smallest scales by default so a first run finishes quickly.
