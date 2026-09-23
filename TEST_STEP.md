@@ -42,7 +42,7 @@ Display adapters) dan *Intel(R) AI Boost* (di Neural processors).
    centang **"Add python.exe to PATH"**.
 
    ```powershell
-   python --version   # harus 3.10-3.12
+   python --version   # harus 3.10 – 3.12
    ```
 
 2. Clone repo:
@@ -61,7 +61,7 @@ Display adapters) dan *Intel(R) AI Boost* (di Neural processors).
    powershell -ExecutionPolicy Bypass -File scripts\setup_env.ps1
    ```
 
-   Instalasi torch + openvino cukup besar, bisa 5-15 menit.
+   Instalasi torch + openvino cukup besar, bisa 5–15 menit.
 
 **Cek lolos:** baris terakhir setup menampilkan
 
@@ -88,7 +88,7 @@ menyiapkan semuanya sekaligus (default run + full sweep):
 .venv\Scripts\python.exe -m yolobench.benchmark --prepare --sizes n,s,m,l,x --precisions fp32,fp16,int8
 ```
 
-Butuh ±2-3 GB disk dan bisa makan waktu lama (export INT8 ±2 menit per
+Butuh ±2–3 GB disk dan bisa makan waktu lama (export INT8 ±2 menit per
 model karena kalibrasi). Kalau ada yang gagal, jalankan perintah yang sama
 lagi: yang sudah jadi di-skip, hanya yang gagal yang diulang.
 
@@ -133,7 +133,7 @@ untuk full sweep.
 - Terminal menampilkan `[devices] using CPU / GPU / NPU` (tiga-tiganya).
 - Ada 6 kombinasi (`[1/6]` … `[6/6]`), idealnya semua `-> ok`.
 - Tabel `=== FPS (mean) ===` dan `=== mAP50-95 ===` tercetak di akhir.
-- mAP50-95 untuk yolo11n berada di kisaran **~0.45-0.55** di semua device.
+- mAP50-95 untuk yolo11n berada di kisaran **~0.45–0.55** di semua device.
   Kalau satu device punya mAP jauh berbeda (misal < 0.3), ada yang salah
   dengan export/inference di device itu. Catat dan laporkan.
 
@@ -142,7 +142,7 @@ asalkan CPU dan GPU lolos.
 
 ---
 
-## Tahap 4: Run default (±30-60 menit)
+## Tahap 4: Run default (±30–60 menit)
 
 14 model (ukuran n dan s dari semua family) × fp32/int8 × CPU/GPU/NPU:
 
