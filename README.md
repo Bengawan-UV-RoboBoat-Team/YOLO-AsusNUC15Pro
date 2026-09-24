@@ -15,6 +15,8 @@ three Intel Core Ultra hardware targets of this NUC 15 Pro: **CPU**,
   are **separate** drivers, so don't just install the standard graphics
   driver and assume the NPU comes with it. Search for "Intel NPU Driver" on
   Intel's download page for the matching chip.
+- Running on **Ubuntu 24.04** instead? The Python code is the same; only the
+  setup and drivers differ. See [section 8](#8-running-on-ubuntu-2404).
 
 ## 2. Install Python
 
@@ -144,3 +146,44 @@ don't have to type long flags each time.
   likely meets this, but still verify it with step 4 above, since it hasn't
   been confirmed here that the NPU driver ships preinstalled on this NUC's
   Windows image.
+
+## 8. Running on Ubuntu 24.04
+
+The benchmark code itself has nothing Windows-specific, so it runs unchanged
+on Ubuntu 24.04. Only the setup steps and drivers differ.
+
+**Drivers** (the CPU works without any of these):
+
+- **Kernel**: install the HWE kernel, because the stock 6.8 kernel of 24.04
+  may be too old for the Core Ultra 200-series iGPU/NPU:
+  `sudo apt install linux-generic-hwe-24.04`, then reboot.
+- **Arc iGPU**: install Intel's compute runtime (OpenCL/Level Zero), either
+  `sudo apt install intel-opencl-icd` or the latest `.deb` packages from
+  <https://github.com/intel/compute-runtime/releases>.
+- **NPU**: install the `.deb` packages for Ubuntu 24.04 from
+  <https://github.com/intel/linux-npu-driver/releases> (the kernel module
+  `intel_vpu` is already part of the kernel).
+- **Permissions**: add your user to the `render` group, otherwise GPU/NPU
+  are often not detected: `sudo usermod -aG render $USER`, then log out and
+  back in.
+
+**Setup** (Python 3.12 ships with 24.04, which is within the recommended
+range):
+
+```bash
+sudo apt install python3-venv
+bash scripts/setup_env.sh
+```
+
+`setup_env.sh` is the Linux counterpart of `setup_env.ps1`: it creates
+`.venv`, installs the dependencies, warns if you are not in the `render`
+group, and prints the detected OpenVINO devices. To use a different
+interpreter, run `PYTHON=python3.12 bash scripts/setup_env.sh`.
+
+**Running**: every command in this README works the same; just replace
+`.venv\Scripts\python.exe` with `.venv/bin/python`, for example:
+
+```bash
+.venv/bin/python -m yolobench.benchmark
+.venv/bin/python -c "from openvino import Core; print(Core().available_devices)"
+```

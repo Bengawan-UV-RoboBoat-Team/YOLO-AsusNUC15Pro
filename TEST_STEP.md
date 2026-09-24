@@ -4,26 +4,38 @@ Panduan urut untuk menjalankan benchmark YOLO di NUC 15 Pro, dari mesin
 kosong sampai hasil tersimpan. Kerjakan berurutan; tiap langkah punya
 **cek lolos**. Jangan lanjut sebelum cek itu terpenuhi.
 
-Semua perintah dijalankan di **PowerShell** dari root folder project.
+Panduan ini berlaku untuk **Windows 11** dan **Ubuntu 24.04**. Semua
+perintah dijalankan dari root folder project: di **PowerShell** untuk
+Windows, di **bash** untuk Ubuntu. Contoh perintah ditulis versi Windows;
+di Ubuntu, ganti `.venv\Scripts\python.exe` dengan `.venv/bin/python`.
+Langkah yang berbeda di Ubuntu ditulis terpisah.
 
 ---
 
 ## Tahap 0: Persiapan mesin
 
-1. **Colok NUC ke listrik** dan set power mode ke performa maksimal:
-   Settings → System → Power → Power mode → **Best performance**.
+1. **Colok NUC ke listrik** dan set power mode ke performa maksimal.
    Mode hemat daya men-throttle CPU/GPU dan membuat FPS jauh lebih rendah.
+   - Windows: Settings → System → Power → Power mode → **Best performance**.
+   - Ubuntu: Settings → Power → Power Mode → **Performance**, atau
+     `powerprofilesctl set performance`.
 2. **Tutup aplikasi berat lain** (browser dengan banyak tab, game, sync
    OneDrive besar) supaya tidak mengganggu pengukuran.
-3. **Update Windows** dan restart sekali sebelum mulai.
+3. **Update OS** dan restart sekali sebelum mulai.
+   - Windows: Windows Update.
+   - Ubuntu: `sudo apt update && sudo apt full-upgrade`.
 
-**Cek lolos:** NUC tersambung listrik, power mode = Best performance.
+**Cek lolos:** NUC tersambung listrik, power mode = Best performance
+(Windows) / Performance (Ubuntu: `powerprofilesctl get` menampilkan
+`performance`).
 
 ---
 
 ## Tahap 1: Driver
 
-Dua driver ini **terpisah**, keduanya harus diinstal:
+Driver iGPU dan NPU **terpisah**, keduanya harus diinstal.
+
+### Windows
 
 1. **Intel Arc Graphics driver** (untuk iGPU): dari halaman download Intel,
    pilih driver terbaru untuk Intel Core Ultra.
@@ -34,15 +46,54 @@ Restart setelah instal.
 **Cek lolos:** di Device Manager muncul *Intel(R) Arc(TM) Graphics* (di
 Display adapters) dan *Intel(R) AI Boost* (di Neural processors).
 
+### Ubuntu 24.04
+
+1. **Kernel HWE**: kernel 6.8 bawaan 24.04 bisa jadi terlalu lama untuk
+   iGPU/NPU Core Ultra seri 200.
+
+   ```bash
+   sudo apt install linux-generic-hwe-24.04
+   ```
+
+2. **Driver iGPU** (compute runtime OpenCL/Level Zero): `sudo apt install
+   intel-opencl-icd`, atau paket `.deb` terbaru dari
+   <https://github.com/intel/compute-runtime/releases> (lebih disarankan
+   untuk chip baru).
+3. **Driver NPU**: paket `.deb` untuk Ubuntu 24.04 dari
+   <https://github.com/intel/linux-npu-driver/releases>. Ikuti instruksi
+   instalasi di halaman rilisnya, termasuk paket Level Zero yang disebut di
+   sana.
+4. **Grup `render`**: tanpa ini GPU/NPU sering tidak terdeteksi.
+
+   ```bash
+   sudo usermod -aG render $USER
+   ```
+
+Reboot setelah semua terpasang (sekaligus mengaktifkan kernel HWE dan grup
+`render`).
+
+**Cek lolos:**
+
+```bash
+uname -r          # 6.11 atau lebih baru
+ls /dev/dri/      # ada renderD128 (iGPU)
+ls /dev/accel/    # ada accel0 (NPU)
+groups            # ada render
+```
+
 ---
 
 ## Tahap 2: Ambil kode & setup environment
 
-1. Install **Python 3.12** dari <https://www.python.org/downloads/> dan
-   centang **"Add python.exe to PATH"**.
+1. Siapkan **Python 3.12**.
+   - Windows: install dari <https://www.python.org/downloads/> dan centang
+     **"Add python.exe to PATH"**.
+   - Ubuntu: Python 3.12 sudah bawaan, tinggal pasang modul venv dan git:
+     `sudo apt install python3-venv git`.
 
    ```powershell
-   python --version   # harus 3.10 – 3.12
+   python --version    # Windows, harus 3.10 – 3.12
+   python3 --version   # Ubuntu, harus 3.10 – 3.12
    ```
 
 2. Clone repo:
@@ -58,7 +109,13 @@ Display adapters) dan *Intel(R) AI Boost* (di Neural processors).
 3. Jalankan setup (membuat `.venv`, install dependency, cek device):
 
    ```powershell
+   # Windows
    powershell -ExecutionPolicy Bypass -File scripts\setup_env.ps1
+   ```
+
+   ```bash
+   # Ubuntu
+   bash scripts/setup_env.sh
    ```
 
    Instalasi torch + openvino cukup besar, bisa 5–15 menit.
@@ -69,7 +126,8 @@ Display adapters) dan *Intel(R) AI Boost* (di Neural processors).
 Available OpenVINO devices: ['CPU', 'GPU', 'NPU']
 ```
 
-Kalau `GPU` atau `NPU` tidak muncul → kembali ke Tahap 1. Benchmark tetap
+Kalau `GPU` atau `NPU` tidak muncul → kembali ke Tahap 1. Di Ubuntu,
+`setup_env.sh` juga memberi peringatan kalau user belum masuk grup `render`. Benchmark tetap
 bisa jalan, tapi device yang hilang akan di-skip dan tidak ada hasilnya.
 
 ---
@@ -111,7 +169,10 @@ sama sekali; export tidak memakan waktu NUC):
    Kalau berbeda, samakan dengan `pip install ultralytics==<versi> openvino==<versi> nncf==<versi>`
    di NUC.
 3. Copy folder **`models\`** dan **`data\`** dari laptop ke folder project
-   yang sama di NUC (flashdisk / jaringan). Isinya tidak ikut git.
+   yang sama di NUC (flashdisk / jaringan). Isinya tidak ikut git. Laptop
+   dan NUC boleh beda OS (misal prepare di laptop Windows, benchmark di NUC
+   Ubuntu): model OpenVINO tidak tergantung OS, dan path dataset di
+   `data/ultralytics_config/` ditulis ulang otomatis setiap run.
 
 **Cek lolos:** baris terakhir `[prepare] done: N/N export(s) ready ...`
 tanpa baris `failed`.
@@ -156,7 +217,13 @@ tersaring (`not run (filtered out ...)`). Cek apakah daftarnya masuk akal.
 Setelah selesai, **amankan hasilnya** (file summary ditimpa setiap run):
 
 ```powershell
+# Windows
 Copy-Item results\benchmark_summary.csv results\summary_default_$(Get-Date -Format yyyyMMdd).csv
+```
+
+```bash
+# Ubuntu
+cp results/benchmark_summary.csv results/summary_default_$(date +%Y%m%d).csv
 ```
 
 **Cek lolos:** mayoritas baris di CSV berstatus `ok`.
@@ -175,7 +242,8 @@ Semua ukuran (42 model) × semua presisi × semua device:
   yang sudah selesai tetap ada di `results/raw/<timestamp>.json`.
 - Kalau Tahap 2b sudah dijalankan dengan filter yang sama, tidak ada
   download/export sama sekali karena semua langsung diambil dari `models/`.
-- Matikan sleep/hibernate otomatis selama run.
+- Matikan sleep/hibernate otomatis selama run (Ubuntu: Settings → Power →
+  Automatic Suspend → Off).
 
 Setelah selesai, salin summary seperti di Tahap 4 dengan nama berbeda.
 
@@ -215,11 +283,12 @@ Hal yang menarik dibandingkan:
    di-track git, jadi simpan manual kalau perlu datanya):
 
    ```powershell
-   git add results\summary_*.csv
+   git add results/summary_*.csv
    git commit -m "results: benchmark NUC 15 Pro <tanggal>"
    ```
 
-2. Catat juga di laporan: versi driver Arc & NPU, versi `ultralytics` dan
+2. Catat juga di laporan: OS (Windows 11 / Ubuntu 24.04 + versi kernel
+   dari `uname -r`), versi driver Arc & NPU, versi `ultralytics` dan
    `openvino` (ada di kolom `ultralytics_version` CSV / output awal run),
    dan power mode yang dipakai, karena angka FPS tidak bisa dibandingkan tanpa
    informasi ini.
@@ -233,6 +302,9 @@ Hal yang menarik dibandingkan:
 | `scripts\setup_env.ps1 cannot be loaded ... running scripts is disabled` | Jalankan dengan `powershell -ExecutionPolicy Bypass -File scripts\setup_env.ps1` |
 | `ModuleNotFoundError: No module named 'yolobench'` | Paket belum terinstal: `.venv\Scripts\python.exe -m pip install -e .` |
 | `GPU` / `NPU` tidak ada di daftar device | Driver belum terinstal / perlu restart (Tahap 1) |
+| (Ubuntu) `GPU` / `NPU` tetap tidak muncul padahal driver sudah terpasang | User belum di grup `render` atau belum logout/login ulang (cek `groups`); atau kernel masih 6.8 (cek `uname -r`), pasang `linux-generic-hwe-24.04` lalu reboot |
+| (Ubuntu) `ensurepip is not available` / gagal membuat `.venv` | Modul venv belum ada: `sudo apt install python3-venv`, hapus `.venv`, jalankan setup lagi |
+| (Ubuntu) `$'\r': command not found` saat menjalankan `setup_env.sh` | File ter-copy dengan line ending Windows. Ambil lewat `git clone`/`git pull`, atau perbaiki dengan `sed -i 's/\r$//' scripts/setup_env.sh` |
 | Export INT8 gagal menyebut `nncf` | `.venv\Scripts\python.exe -m pip install -r requirements.txt` |
 | FPS sangat rendah & tidak stabil | Belum dicolok listrik / power mode bukan Best performance / ada aplikasi berat |
 | Muncul file `kernel.errors.txt` | Dump error compiler kernel driver GPU Intel dan menandakan driver GPU perlu update. Sudah di-`.gitignore` |
