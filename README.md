@@ -392,3 +392,43 @@ interpreter, run `PYTHON=python3.12 bash scripts/setup_env.sh`.
 .venv/bin/python -m yolobench.benchmark
 .venv/bin/python -c "from openvino import Core; print(Core().available_devices)"
 ```
+
+## 9. Live camera test
+
+The benchmark times one model on one still image on an idle machine. To
+check a real setup (several cameras at once, tracking, the CPU busy with
+other work), run the camera test on already exported models:
+
+```bash
+# Interactive: pick camera, model, precision and device from menus
+.venv/bin/python -m yolobench.camera
+
+# Models already exported in models/
+.venv/bin/python -m yolobench.camera --list
+
+# One camera on the GPU
+.venv/bin/python -m yolobench.camera --stream 0:yolo26s:int8:GPU
+
+# Two cameras, one on the GPU and one on the NPU, with tracking, for 10 minutes
+.venv/bin/python -m yolobench.camera --stream 0:yolo26s:int8:GPU --stream 2:yolo26s:fp32:NPU --track --duration 600
+```
+
+- A stream is `SOURCE:MODEL:PRECISION:DEVICE`. `SOURCE` is a camera index,
+  a video file (played back at its own frame rate, like a camera) or a
+  stream URL such as `rtsp://...`.
+- All streams run at the same time. Each always processes the newest frame,
+  so a model that is too slow skips frames instead of falling behind.
+- Every 5 s the terminal shows FPS and p95 inference time per stream, plus
+  CPU load and temperature. At the end it prints, per stream: processed vs
+  camera FPS, skipped frames, inference mean/p95/p99, frame-to-result
+  p95/p99, and **OK** or **TOO SLOW** (more than 5% of frames skipped, or
+  p95 inference longer than one camera frame, 33 ms at 30 FPS). The summary
+  is also saved to `results/camera/<timestamp>.csv`.
+- Press `q` in a preview window or Ctrl+C to stop. Use `--no-show` over SSH,
+  `--cam-fps`/`--width`/`--height`/`--fourcc` to request a camera mode.
+- `--track` uses Ultralytics' ByteTrack, which needs the `lap` package;
+  Ultralytics installs it automatically the first time if it's missing.
+- For a realistic check, run it for 10-30 minutes with the rest of the
+  robot software (ROS, planning, ...) running, and watch p99 and the CPU
+  temperature. The step-by-step procedure is in
+  [TEST_CAMERA.md](TEST_CAMERA.md) (in Indonesian).

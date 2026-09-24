@@ -392,3 +392,46 @@ interpreter lain, jalankan `PYTHON=python3.12 bash scripts/setup_env.sh`.
 .venv/bin/python -m yolobench.benchmark
 .venv/bin/python -c "from openvino import Core; print(Core().available_devices)"
 ```
+
+## 9. Tes kamera langsung
+
+Benchmark mengukur satu model pada satu gambar diam di mesin yang
+menganggur. Untuk mengecek setup sebenarnya (beberapa kamera sekaligus,
+tracking, CPU sibuk dengan pekerjaan lain), jalankan tes kamera dengan
+model yang sudah di-export:
+
+```bash
+# Interaktif: pilih kamera, model, presisi, dan device dari menu
+.venv/bin/python -m yolobench.camera
+
+# Model yang sudah di-export di models/
+.venv/bin/python -m yolobench.camera --list
+
+# Satu kamera di GPU
+.venv/bin/python -m yolobench.camera --stream 0:yolo26s:int8:GPU
+
+# Dua kamera, satu di GPU dan satu di NPU, dengan tracking, selama 10 menit
+.venv/bin/python -m yolobench.camera --stream 0:yolo26s:int8:GPU --stream 2:yolo26s:fp32:NPU --track --duration 600
+```
+
+- Format stream: `SOURCE:MODEL:PRESISI:DEVICE`. `SOURCE` bisa berupa indeks
+  kamera, file video (diputar sesuai frame rate aslinya, seperti kamera),
+  atau URL stream seperti `rtsp://...`.
+- Semua stream berjalan bersamaan. Setiap stream selalu memproses frame
+  terbaru, jadi model yang terlalu lambat akan melewati frame, bukan
+  tertinggal makin jauh.
+- Setiap 5 detik terminal menampilkan FPS dan waktu inference p95 per
+  stream, serta beban dan suhu CPU. Di akhir, untuk tiap stream dicetak: FPS
+  yang terproses vs FPS kamera, frame yang terlewat, inference mean/p95/p99,
+  waktu frame-sampai-hasil p95/p99, dan **OK** atau **TOO SLOW** (lebih dari
+  5% frame terlewat, atau inference p95 lebih lama dari satu frame kamera,
+  33 ms di 30 FPS). Ringkasannya juga disimpan ke
+  `results/camera/<timestamp>.csv`.
+- Tekan `q` di jendela preview atau Ctrl+C untuk berhenti. Pakai
+  `--no-show` lewat SSH, dan `--cam-fps`/`--width`/`--height`/`--fourcc` untuk meminta
+  mode kamera tertentu.
+- `--track` memakai ByteTrack dari Ultralytics, yang butuh paket `lap`;
+  Ultralytics akan memasangnya otomatis saat pertama kali kalau belum ada.
+- Untuk pengecekan yang realistis, jalankan 10–30 menit bersamaan dengan
+  software robot lainnya (ROS, path planning, dll.), lalu pantau p99 dan
+  suhu CPU. Langkah lengkapnya ada di [TEST_CAMERA.md](TEST_CAMERA.md).
