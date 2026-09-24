@@ -15,6 +15,8 @@ lewat OpenVINO.
   ini **terpisah**, jadi jangan cuma instal driver grafis standar dan
   mengasumsikan NPU otomatis ikut. Cari "Intel NPU Driver" di halaman
   download Intel untuk chip yang sesuai.
+- Mau jalan di **Ubuntu 24.04**? Kode Python-nya sama, yang beda cuma setup
+  dan driver. Lihat [bagian 8](#8-menjalankan-di-ubuntu-2404).
 
 ## 2. Instal Python
 
@@ -143,3 +145,44 @@ tidak perlu ketik flag panjang tiap kali.
   besar memenuhi ini, tapi tetap verifikasi lewat langkah 4 di atas karena
   belum dipastikan dari sini secara pasti driver NPU sudah terpasang
   default di image Windows NUC ini.
+
+## 8. Menjalankan di Ubuntu 24.04
+
+Kode benchmark-nya sendiri tidak punya bagian khusus Windows, jadi jalan
+tanpa perubahan di Ubuntu 24.04. Yang beda cuma langkah setup dan driver.
+
+**Driver** (CPU tetap jalan tanpa semua ini):
+
+- **Kernel**: pasang kernel HWE, karena kernel 6.8 bawaan 24.04 bisa jadi
+  terlalu lama untuk iGPU/NPU Core Ultra seri 200:
+  `sudo apt install linux-generic-hwe-24.04`, lalu reboot.
+- **iGPU Arc**: pasang compute runtime Intel (OpenCL/Level Zero), lewat
+  `sudo apt install intel-opencl-icd` atau paket `.deb` terbaru dari
+  <https://github.com/intel/compute-runtime/releases>.
+- **NPU**: pasang paket `.deb` untuk Ubuntu 24.04 dari
+  <https://github.com/intel/linux-npu-driver/releases> (modul kernel
+  `intel_vpu` sudah ada di kernel).
+- **Permission**: masukkan user ke grup `render`, kalau tidak GPU/NPU
+  sering tidak terdeteksi: `sudo usermod -aG render $USER`, lalu logout
+  dan login lagi.
+
+**Setup** (Python bawaan 24.04 adalah 3.12, masih dalam rentang yang
+direkomendasikan):
+
+```bash
+sudo apt install python3-venv
+bash scripts/setup_env.sh
+```
+
+`setup_env.sh` adalah versi Linux dari `setup_env.ps1`: membuat `.venv`,
+install dependency, memberi peringatan kalau user belum masuk grup
+`render`, lalu menampilkan device OpenVINO yang terdeteksi. Untuk memakai
+interpreter lain, jalankan `PYTHON=python3.12 bash scripts/setup_env.sh`.
+
+**Menjalankan**: semua perintah di README ini sama saja, cukup ganti
+`.venv\Scripts\python.exe` dengan `.venv/bin/python`, contohnya:
+
+```bash
+.venv/bin/python -m yolobench.benchmark
+.venv/bin/python -c "from openvino import Core; print(Core().available_devices)"
+```
