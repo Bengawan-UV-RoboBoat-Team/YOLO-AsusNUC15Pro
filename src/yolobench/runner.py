@@ -28,12 +28,19 @@ class RunResult:
     latency_ms_p95: float | None
     map50_95: float | None
     map50: float | None
+    val_dataset: str  # which dataset map50_95/map50 were measured on
     model_size_mb: float | None
     ultralytics_version: str
     timestamp: str
 
     def as_dict(self) -> dict:
         return asdict(self)
+
+
+def dataset_label(data_yaml: str) -> str:
+    """Short dataset name for the results table, e.g. "coco-val500" for
+    data/coco-val500.yaml or "coco128" for coco128.yaml."""
+    return Path(data_yaml).stem
 
 
 def _dir_size_mb(path: Path) -> float | None:
@@ -73,6 +80,7 @@ def run_one(
         precision=precision,
         device_key=device_key,
         ov_device_name=ov_device_name,
+        val_dataset=dataset_label(val_data_yaml),
         ultralytics_version=get_ultralytics_version(),
         timestamp=datetime.now(timezone.utc).isoformat(),
     )

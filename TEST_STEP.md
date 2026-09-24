@@ -19,6 +19,10 @@ Langkah yang berbeda di Ubuntu ditulis terpisah.
    - Windows: Settings → System → Power → Power mode → **Best performance**.
    - Ubuntu: Settings → Power → Power Mode → **Performance**, atau
      `powerprofilesctl set performance`.
+
+   NUC tidak punya baterai, jadi cek adaptor listrik secara fisik. Di
+   Ubuntu, nilai `/sys/class/power_supply/*/online` bisa berasal dari port
+   USB-C dan tidak menunjukkan status adaptor.
 2. **Tutup aplikasi berat lain** (browser dengan banyak tab, game, sync
    OneDrive besar) supaya tidak mengganggu pengukuran.
 3. **Update OS** dan restart sekali sebelum mulai.
@@ -49,7 +53,8 @@ Display adapters) dan *Intel(R) AI Boost* (di Neural processors).
 ### Ubuntu 24.04
 
 1. **Kernel HWE**: kernel 6.8 bawaan 24.04 bisa jadi terlalu lama untuk
-   iGPU/NPU Core Ultra seri 200.
+   iGPU/NPU Core Ultra seri 200. Cek dulu dengan `uname -r`; kalau sudah
+   6.11 atau lebih baru, lewati langkah ini.
 
    ```bash
    sudo apt install linux-generic-hwe-24.04
@@ -58,11 +63,31 @@ Display adapters) dan *Intel(R) AI Boost* (di Neural processors).
 2. **Driver iGPU** (compute runtime OpenCL/Level Zero): `sudo apt install
    intel-opencl-icd`, atau paket `.deb` terbaru dari
    <https://github.com/intel/compute-runtime/releases> (lebih disarankan
-   untuk chip baru).
-3. **Driver NPU**: paket `.deb` untuk Ubuntu 24.04 dari
-   <https://github.com/intel/linux-npu-driver/releases>. Ikuti instruksi
-   instalasi di halaman rilisnya, termasuk paket Level Zero yang disebut di
-   sana.
+   untuk chip baru). Kalau memakai `.deb`, paket compiler IGC
+   (`intel-igc-core-2`, `intel-igc-opencl-2`) dari
+   <https://github.com/intel/intel-graphics-compiler/releases> juga wajib
+   diunduh. Link `wget` lengkapnya ada di catatan rilis compute-runtime.
+   Taruh semua `.deb` di satu folder kosong, lalu:
+
+   ```bash
+   sudo dpkg -i *.deb
+   ```
+
+3. **Driver NPU**: dari <https://github.com/intel/linux-npu-driver/releases>.
+   Ringkasan urutan dari catatan rilisnya (ambil nama file & link persisnya
+   dari halaman rilis terbaru):
+
+   ```bash
+   # hapus paket NPU versi lama (aman kalau belum ada)
+   sudo dpkg --purge --force-remove-reinstreq intel-driver-compiler-npu intel-fw-npu intel-level-zero-npu intel-level-zero-npu-dbgsym
+   # unduh & ekstrak arsip untuk Ubuntu 24.04 (file ...-ubuntu2404.tar.gz)
+   tar -xf linux-npu-driver-<versi>-ubuntu2404.tar.gz
+   sudo apt update && sudo apt install libtbb12
+   sudo dpkg -i *.deb
+   # pasang Level Zero loader (libze1) dari link di catatan rilis
+   sudo dpkg -i libze1_*.deb
+   ```
+
 4. **Grup `render`**: tanpa ini GPU/NPU sering tidak terdeteksi.
 
    ```bash
@@ -79,7 +104,14 @@ uname -r          # 6.11 atau lebih baru
 ls /dev/dri/      # ada renderD128 (iGPU)
 ls /dev/accel/    # ada accel0 (NPU)
 groups            # ada render
+dpkg -l | grep -E "intel-opencl-icd|libze-intel-gpu1|intel-level-zero-npu|libze1"
+                  # keempat paket muncul (driver userspace iGPU & NPU)
 ```
+
+`renderD128` dan `accel0` bisa sudah ada walaupun driver userspace belum
+terpasang, karena keduanya dibuat oleh kernel. Karena itu cek `dpkg` di
+atas tetap wajib; tanpa paket-paket itu OpenVINO tidak akan melihat `GPU`
+/ `NPU`.
 
 ---
 
@@ -102,9 +134,6 @@ groups            # ada render
    git clone https://github.com/Bengawan-UV-RoboBoat-Team/YOLO-AsusNUC15Pro.git
    cd YOLO-AsusNUC15Pro
    ```
-
-   > Selama perbaikan belum di-merge ke `main`, pindah dulu ke branch-nya:
-   > `git checkout fix/model-weights-and-sizes`
 
 3. Jalankan setup (membuat `.venv`, install dependency, cek device):
 
@@ -134,7 +163,8 @@ bisa jalan, tapi device yang hilang akan di-skip dan tidak ada hasilnya.
 
 ## Tahap 2b: Siapkan semua model di awal (`--prepare`)
 
-`--prepare` mengunduh semua bobot `.pt` + dataset coco128 dan meng-export
+`--prepare` mengunduh semua bobot `.pt`, dataset coco128 (untuk kalibrasi
+INT8) dan subset COCO val2017 (untuk mAP, ±1 GB), lalu meng-export
 semua model ke OpenVINO untuk semua presisi, **tanpa** menjalankan
 benchmark. Dengan begitu benchmark tidak butuh internet sama sekali, dan
 masalah download/export ketahuan di awal, bukan di tengah sweep.
@@ -146,7 +176,7 @@ menyiapkan semuanya sekaligus (default run + full sweep):
 .venv\Scripts\python.exe -m yolobench.benchmark --prepare --sizes n,s,m,l,x --precisions fp32,fp16,int8
 ```
 
-Butuh ±2–3 GB disk dan bisa makan waktu lama (export INT8 ±2 menit per
+Butuh ±3–4 GB disk dan bisa makan waktu lama (export INT8 ±2 menit per
 model karena kalibrasi). Kalau ada yang gagal, jalankan perintah yang sama
 lagi: yang sudah jadi di-skip, hanya yang gagal yang diulang.
 
@@ -172,7 +202,8 @@ sama sekali; export tidak memakan waktu NUC):
    yang sama di NUC (flashdisk / jaringan). Isinya tidak ikut git. Laptop
    dan NUC boleh beda OS (misal prepare di laptop Windows, benchmark di NUC
    Ubuntu): model OpenVINO tidak tergantung OS, dan path dataset di
-   `data/ultralytics_config/` ditulis ulang otomatis setiap run.
+   `data/ultralytics_config/` serta `data/coco-val500.yaml` ditulis ulang
+   otomatis setiap run.
 
 **Cek lolos:** baris terakhir `[prepare] done: N/N export(s) ready ...`
 tanpa baris `failed`.
@@ -194,9 +225,12 @@ untuk full sweep.
 - Terminal menampilkan `[devices] using CPU / GPU / NPU` (tiga-tiganya).
 - Ada 6 kombinasi (`[1/6]` … `[6/6]`), idealnya semua `-> ok`.
 - Tabel `=== FPS (mean) ===` dan `=== mAP50-95 ===` tercetak di akhir.
-- mAP50-95 untuk yolo11n berada di kisaran **~0.45–0.55** di semua device.
-  Kalau satu device punya mAP jauh berbeda (misal < 0.3), ada yang salah
-  dengan export/inference di device itu. Catat dan laporkan.
+- Header menampilkan `validation dataset: coco-val500`.
+- mAP50-95 untuk yolo11n berada di kisaran **~0.35–0.43** di semua device
+  (angka resmi di val2017 penuh: 0.395). Versi lama yang memakai coco128
+  menghasilkan ±0.50; angka itu terlalu tinggi karena coco128 adalah data
+  latihan. Kalau satu device punya mAP jauh berbeda (misal < 0.25), ada yang
+  salah dengan export/inference di device itu. Catat dan laporkan.
 
 Kombinasi NPU yang `FAILED` / `crashed` **boleh terjadi** (lihat Tahap 6),
 asalkan CPU dan GPU lolos.
@@ -257,7 +291,8 @@ Setelah selesai, salin summary seperti di Tahap 4 dengan nama berbeda.
 | --- | --- |
 | `fps_mean` | Rata-rata FPS (lebih tinggi lebih baik) |
 | `latency_ms_mean`, `latency_ms_p95` | Latensi rata-rata dan persentil-95 per gambar |
-| `map50_95`, `map50` | Akurasi di coco128 (**indikatif**, hanya untuk perbandingan relatif antar device/presisi) |
+| `map50_95`, `map50` | Akurasi di subset 500 gambar COCO val2017 (data yang tidak dipakai untuk melatih model) |
+| `val_dataset` | Dataset tempat mAP diukur (`coco-val500`; hasil lama: `coco128`) |
 | `model_size_mb` | Ukuran model OpenVINO di disk |
 | `status` | Lihat tabel di bawah |
 | `error` | Pesan error kalau gagal |
@@ -303,6 +338,7 @@ Hal yang menarik dibandingkan:
 | `ModuleNotFoundError: No module named 'yolobench'` | Paket belum terinstal: `.venv\Scripts\python.exe -m pip install -e .` |
 | `GPU` / `NPU` tidak ada di daftar device | Driver belum terinstal / perlu restart (Tahap 1) |
 | (Ubuntu) `GPU` / `NPU` tetap tidak muncul padahal driver sudah terpasang | User belum di grup `render` atau belum logout/login ulang (cek `groups`); atau kernel masih 6.8 (cek `uname -r`), pasang `linux-generic-hwe-24.04` lalu reboot |
+| (Ubuntu) `/dev/accel/accel0` / `/dev/dri/renderD128` ada tapi `NPU` / `GPU` tidak muncul di OpenVINO | Driver userspace belum terpasang: paket NPU + `libze1`, atau compute runtime iGPU (Tahap 1, cek dengan `dpkg -l`) |
 | (Ubuntu) `ensurepip is not available` / gagal membuat `.venv` | Modul venv belum ada: `sudo apt install python3-venv`, hapus `.venv`, jalankan setup lagi |
 | (Ubuntu) `$'\r': command not found` saat menjalankan `setup_env.sh` | File ter-copy dengan line ending Windows. Ambil lewat `git clone`/`git pull`, atau perbaiki dengan `sed -i 's/\r$//' scripts/setup_env.sh` |
 | Export INT8 gagal menyebut `nncf` | `.venv\Scripts\python.exe -m pip install -r requirements.txt` |

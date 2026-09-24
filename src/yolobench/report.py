@@ -19,6 +19,7 @@ FIELDNAMES = [
     "latency_ms_p95",
     "map50_95",
     "map50",
+    "val_dataset",
     "model_size_mb",
     "ultralytics_version",
     "timestamp",

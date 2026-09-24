@@ -20,16 +20,16 @@ from pathlib import Path
 import yaml
 
 from . import devices as devices_mod
-from . import discovery, report
+from . import datasets, discovery, report
 from .export import OPENVINO_DIR_SUFFIX, ExportError, export_openvino
-from .runner import RunResult, run_one
+from .runner import RunResult, dataset_label, run_one
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = PROJECT_ROOT / "configs" / "benchmark.yaml"
 RESULTS_DIR = PROJECT_ROOT / "results"
 DATA_DIR = PROJECT_ROOT / "data"
 
-# Give ultralytics a project-local settings file so datasets (coco128) land in
+# Give ultralytics a project-local settings file so datasets (coco128, COCO) land in
 # data/ and val runs in results/runs/, without touching the user's global
 # ultralytics settings. Must be set before ultralytics is first imported, and
 # the directory must already exist or ultralytics falls back to /tmp.
@@ -63,7 +63,15 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--sizes", type=str, default=None, help="Comma-separated, e.g. n,s")
     parser.add_argument("--precisions", type=str, default=None, help="Comma-separated: fp32,fp16,int8")
     parser.add_argument("--devices", type=str, default=None, help="Comma-separated: CPU,GPU,NPU")
-    parser.add_argument("--dataset", type=str, default=None)
+    parser.add_argument(
+        "--calib-dataset", type=str, default=None, help="Dataset yaml for INT8 calibration, e.g. coco128.yaml"
+    )
+    parser.add_argument(
+        "--val-dataset",
+        type=str,
+        default=None,
+        help="Dataset for mAP: coco-val<N> (fixed N-image subset of COCO val2017) or a dataset yaml",
+    )
     parser.add_argument("--imgsz", type=int, default=None)
     parser.add_argument("--warmup-iters", type=int, default=None)
     parser.add_argument("--timed-iters", type=int, default=None)
@@ -89,7 +97,13 @@ def _sample_image() -> str:
 
 
 def _failed_result(
-    spec: discovery.ModelSpec, precision: str, device_key: str, ov_device_name: str, status: str, error: str
+    spec: discovery.ModelSpec,
+    precision: str,
+    device_key: str,
+    ov_device_name: str,
+    val_data_yaml: str,
+    status: str,
+    error: str,
 ) -> RunResult:
     return RunResult(
         family=spec.family,
@@ -104,6 +118,7 @@ def _failed_result(
         latency_ms_p95=None,
         map50_95=None,
         map50=None,
+        val_dataset=dataset_label(val_data_yaml),
         model_size_mb=None,
         ultralytics_version=discovery.get_ultralytics_version(),
         timestamp=datetime.now(timezone.utc).isoformat(),
@@ -111,7 +126,13 @@ def _failed_result(
 
 
 def _run_isolated(
-    spec: discovery.ModelSpec, ov_dir: Path, device_key: str, ov_device_name: str, *args, **kwargs
+    spec: discovery.ModelSpec,
+    ov_dir: Path,
+    device_key: str,
+    ov_device_name: str,
+    sample_image: str,
+    val_data_yaml: str,
+    **kwargs,
 ) -> RunResult:
     """Run `run_one` in a fresh child process. OpenVINO GPU/NPU plugins can
     crash natively (segfault) on unsupported models, which no try/except can
@@ -120,28 +141,37 @@ def _run_isolated(
     model caches, memory) from leaking into the next measurement.
     """
     with ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn")) as pool:
-        future = pool.submit(run_one, spec, ov_dir, device_key, ov_device_name, *args, **kwargs)
+        future = pool.submit(
+            run_one, spec, ov_dir, device_key, ov_device_name, sample_image, val_data_yaml, **kwargs
+        )
         try:
             return future.result()
         except BrokenProcessPool:
             precision = ov_dir.name.removesuffix(OPENVINO_DIR_SUFFIX)
             error = "process crashed (native OpenVINO/driver fault, e.g. segfault)"
-            return _failed_result(spec, precision, device_key, ov_device_name, "crashed", error)
+            return _failed_result(spec, precision, device_key, ov_device_name, val_data_yaml, "crashed", error)
 
 
 def _prepare(
-    specs: list[discovery.ModelSpec], precisions: list[str], dataset: str, imgsz: int, force_export: bool
+    specs: list[discovery.ModelSpec],
+    precisions: list[str],
+    calib_dataset: str,
+    val_dataset: str,
+    imgsz: int,
+    force_export: bool,
 ) -> None:
     """Fetch everything a benchmark run needs from the internet up front:
-    the validation dataset (+ the plotting font val downloads with it), each
-    model's .pt weights and its OpenVINO exports. OpenVINO IR is
-    device-agnostic, so the resulting models/ and data/ folders can be copied
-    to the target machine and benchmarked there without network access.
+    the calibration and validation datasets (+ the plotting font val
+    downloads with them), each model's .pt weights and its OpenVINO exports.
+    OpenVINO IR is device-agnostic, so the resulting models/ and data/
+    folders can be copied to the target machine and benchmarked there
+    without network access.
     """
     from ultralytics.data.utils import check_det_dataset
 
-    print(f"[prepare] dataset {dataset}")
-    check_det_dataset(dataset)
+    for dataset in dict.fromkeys((calib_dataset, val_dataset)):
+        print(f"[prepare] dataset {dataset}")
+        check_det_dataset(dataset)
 
     failed: list[str] = []
     total = len(specs) * len(precisions)
@@ -150,7 +180,7 @@ def _prepare(
         for precision in precisions:
             idx += 1
             try:
-                ov_dir = export_openvino(spec, precision, imgsz=imgsz, calib_data=dataset, force=force_export)
+                ov_dir = export_openvino(spec, precision, imgsz=imgsz, calib_data=calib_dataset, force=force_export)
                 print(f"[prepare {idx}/{total}] {spec.weights_name} / {precision}: ok -> {ov_dir}")
             except ExportError as exc:
                 print(f"[prepare {idx}/{total}] {spec.weights_name} / {precision}: FAILED - {exc}")
@@ -169,7 +199,8 @@ def main() -> None:
     sizes = args.sizes.split(",") if args.sizes else cfg.get("sizes") or ["n", "s"]
     precisions = args.precisions.split(",") if args.precisions else cfg.get("precisions") or ["fp32", "int8"]
     requested_devices = args.devices.split(",") if args.devices else cfg.get("devices") or ["CPU", "GPU", "NPU"]
-    dataset = args.dataset or cfg.get("dataset") or "coco128.yaml"
+    calib_dataset = args.calib_dataset or cfg.get("calib_dataset") or "coco128.yaml"
+    val_dataset_name = args.val_dataset or cfg.get("val_dataset") or "coco-val500"
     imgsz = args.imgsz or cfg.get("imgsz") or 640
     n_warmup = args.warmup_iters or cfg.get("warmup_iters") or 10
     n_timed = args.timed_iters or cfg.get("timed_iters") or 100
@@ -177,6 +208,8 @@ def main() -> None:
 
     _configure_ultralytics()
     print(f"[benchmark] ultralytics {discovery.get_ultralytics_version()}")
+    print(f"[benchmark] calibration dataset: {calib_dataset}, validation dataset: {val_dataset_name}")
+    val_dataset = datasets.resolve_dataset(val_dataset_name, DATA_DIR)
     all_specs = discovery.discover_models()
     specs = discovery.filter_specs(all_specs, families=families, sizes=sizes)
     print(f"[benchmark] discovered {len(all_specs)} model(s), running {len(specs)} after filtering:")
@@ -187,7 +220,7 @@ def main() -> None:
         print(f"[benchmark] not run (filtered out by families/sizes): {', '.join(skipped)}")
 
     if args.prepare:
-        _prepare(specs, precisions, dataset, imgsz, force_export)
+        _prepare(specs, precisions, calib_dataset, val_dataset, imgsz, force_export)
         return
 
     detected = devices_mod.probe_openvino_devices()
@@ -212,11 +245,13 @@ def main() -> None:
     for spec in specs:
         for precision in precisions:
             try:
-                ov_dir = export_openvino(spec, precision, imgsz=imgsz, calib_data=dataset, force=force_export)
+                ov_dir = export_openvino(spec, precision, imgsz=imgsz, calib_data=calib_dataset, force=force_export)
             except ExportError as exc:
                 combo_idx += len(resolved_devices)
                 print(f"[{combo_idx}/{total_combos}] {spec.weights_name} / {precision}: EXPORT FAILED - {exc}")
-                results.append(_failed_result(spec, precision, "N/A", "", "export_failed", str(exc)))
+                results.append(
+                    _failed_result(spec, precision, "N/A", "", val_dataset, "export_failed", str(exc))
+                )
                 flush()
                 continue
 
@@ -229,7 +264,7 @@ def main() -> None:
                     device_key,
                     detected.get(device_key, device_key),
                     sample_image,
-                    dataset,
+                    val_dataset,
                     imgsz=imgsz,
                     n_warmup=n_warmup,
                     n_timed=n_timed,

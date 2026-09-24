@@ -1,10 +1,17 @@
 # Default benchmark run configuration. Every key here can be overridden by
 # a matching CLI flag on `python -m yolobench.benchmark` for one-off runs.
 
-# COCO validation subset used both for mAP scoring and INT8 calibration.
-# Small on purpose (fast); results are for relative CPU/iGPU/NPU comparison,
-# not paper-comparable absolute mAP.
-dataset: coco128.yaml
+# INT8 calibration images. coco128 comes from COCO train2017, which is fine
+# for calibration (it only needs representative images).
+calib_dataset: coco128.yaml
+
+# mAP validation set. It must not overlap with the models' training data, so
+# not coco128 (its val split is train2017 images). "coco-val500" is a fixed,
+# evenly spaced 500-image subset of COCO val2017, downloaded automatically
+# (~1 GB) on first use; "coco-val<N>" picks another size. A path to a custom
+# dataset yaml also works.
+val_dataset: coco-val500
+
 imgsz: 640
 
 # Leave empty (null) to include every YOLO family the installed `ultralytics`
