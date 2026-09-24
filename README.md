@@ -10,12 +10,19 @@ three Intel Core Ultra hardware targets of this NUC 15 Pro: **CPU**,
 
 ## Results on the NUC 15 Pro
 
-Default run (`python -m yolobench.benchmark`: sizes n+s, fp32+int8,
-CPU/GPU/NPU, 640 px, 10 warm-up + 100 timed iterations) on 2026-09-24.
+Two runs on 2026-09-24, both at 640 px with 10 warm-up + 100 timed
+iterations:
+
+- **Sizes n and s** on CPU, GPU and NPU, fp32 + int8 (the default run,
+  `python -m yolobench.benchmark`). Raw data:
+  [results/summary_default_20260924_val500.csv](results/summary_default_20260924_val500.csv).
+- **Sizes m, l and x** on the GPU only, fp32 + int8
+  (`--sizes m,l,x --devices GPU`). Raw data:
+  [results/summary_mlx_gpu_20260924_val500.csv](results/summary_mlx_gpu_20260924_val500.csv).
+
 mAP50-95 is measured on `coco-val500`, a fixed 500-image subset of COCO
 val2017 that the pretrained models never saw during training; INT8 is
-calibrated on coco128. Raw data:
-[results/summary_default_20260924_val500.csv](results/summary_default_20260924_val500.csv).
+calibrated on coco128.
 
 | | |
 | --- | --- |
@@ -27,22 +34,39 @@ calibrated on coco128. Raw data:
 As a sanity check, yolo11n fp32 scores 0.394 here, against 0.395 in the
 official Ultralytics figures on the full val2017.
 
+### Best model per FPS budget
+
+The most accurate model on the GPU that still reaches each frame rate. It
+is YOLO26 at every budget:
+
+| Needs at least | Model | FPS | Latency p95 | mAP50-95 |
+| --- | --- | ---: | ---: | ---: |
+| ≥ 80 FPS | **yolo26s int8** | 82.0 | 13.3 ms | 0.478 |
+| ≥ 60 FPS | **yolo26m int8** | 62.3 | 16.5 ms | 0.530 |
+| ≥ 50 FPS | **yolo26l int8** | 51.5 | 20.2 ms | 0.545 |
+| ≥ 30 FPS | **yolo26x int8** | 36.1 | 28.2 ms | 0.570 |
+
+For a 30 FPS camera, each frame must be processed in under 33 ms including
+everything else the robot does. yolo26l int8 (p95 20 ms) leaves the most
+comfortable margin at high accuracy; yolo26x int8 (p95 28 ms) is tight.
+
 ### Highlights
 
-All highlights are measured on the GPU, the fastest device. fp32 mAP is
-the same on CPU, GPU and NPU (within ±0.002), so running a model elsewhere
-only costs speed. Each model appears at most once per category.
+All highlights are measured on the GPU, the fastest device, across every
+size. fp32 mAP is the same on CPU, GPU and NPU (within ±0.002), so running
+a model elsewhere only costs speed. Each model appears at most once per
+category.
 
 #### 🎯 Best mAP
 
-Highest mAP50-95, regardless of speed. yolo26s and yolo12s are tied on
-accuracy, but yolo26s is about 40% faster:
+Highest mAP50-95, regardless of speed. yolo26x is well ahead; the other
+`x` models are tied around 0.54–0.55:
 
 | Rank | Model | FPS | Latency p95 | mAP50-95 |
 | :---: | --- | ---: | ---: | ---: |
-| 🥇 | **yolo26s fp32** | **71.8** | 14.6 ms | **0.487** |
-| 🥈 | **yolo12s fp32** | 50.2 | 20.9 ms | 0.485 |
-| 🥉 | **yolo11s fp32** | 69.5 | 15.5 ms | 0.471 |
+| 🥇 | **yolo26x fp32** | 24.9 | 41.9 ms | **0.581** |
+| 🥈 | **yolov10x fp32** | **29.6** | 34.5 ms | 0.547 |
+| 🥉 | **yolo11x fp32** | 24.8 | 42.1 ms | 0.545 |
 
 #### ⚡ Best FPS
 
@@ -58,7 +82,7 @@ between two runs of the same model, so these three are effectively a tie:
 #### ⚖️ Best balance
 
 Highest mAP50-95 among combinations that reach at least 80 FPS, so they
-are fast enough for real-time use:
+are fast enough for real-time use with plenty of headroom:
 
 | Rank | Model | FPS | Latency p95 | mAP50-95 |
 | :---: | --- | ---: | ---: | ---: |
@@ -68,29 +92,39 @@ are fast enough for real-time use:
 
 Key findings:
 
-- **yolo26s is the best all-round choice**: the most accurate model
-  (0.487 in fp32), and in int8 it keeps 0.478 at 82 FPS on the GPU.
-- **The Arc iGPU is the fastest device** for every model: 1.2–3.2× the
+- **YOLO26 is the best family at every speed**: from yolo26s int8
+  (0.478 at 82 FPS) up to yolo26x fp32, the most accurate model tested
+  (0.581).
+- **yolo26l int8 matches the `x` models of other families** (0.545, like
+  yolo11x, yolov8x and yolov10x) while running about 1.3–1.4× faster
+  (51.5 FPS vs 36–40 FPS in int8).
+- **int8 pays off most on big models**: on the GPU it makes the `x` models
+  36–50% faster for at most 0.011 mAP, while the `n` models gain nothing
+  (−12% to +1%).
+  The exception is **YOLO12**, which gains nothing from int8 at any size and
+  is also the slowest family (yolo12x: 14 FPS).
+- **The Arc iGPU is the fastest device** for every n/s model: 1.2–3.2× the
   CPU and 1.0–2.2× the NPU.
-- **`s` + int8 on the GPU is the sweet spot.** Compared with `n` int8,
-  it costs only about 8% FPS on the GPU but gains about +0.07 mAP
-  (yolo26: 88.7 → 82.0 FPS, 0.409 → 0.478).
 - **Avoid int8 on the NPU for yolo11n, yolo26n, yolov10n and yolo26s**:
   mAP drops to 0.215, 0.227, 0.246 and 0.426, while the same int8 models
-  stay accurate on CPU/GPU. The other models are fine in int8 on the NPU.
-- All 84 combinations completed (`ok`), with no crashes.
+  stay accurate on CPU/GPU. The other n/s models are fine in int8 on the
+  NPU; m/l/x were not tested on the NPU.
+- All 122 combinations (84 + 38) completed (`ok`), with no crashes.
 
-Caveats: this is a single run. Compared with an earlier run of the same
-models, FPS changed by a median of 4%, by up to 11% on the GPU and 15% on
-the NPU, and by 37% in one CPU case (yolov9t int8), so small FPS gaps are
-noise. The mAP uses 500 COCO images and 80 COCO classes; re-test the top
-candidates on your own dataset before choosing a model for a specific task.
+Caveats: each combination ran once. Compared with an earlier run of the
+same n/s models, FPS changed by a median of 4%, by up to 11% on the GPU and
+15% on the NPU, and by 37% in one CPU case (yolov9t int8), so small FPS
+gaps are noise. The mAP uses 500 COCO images and 80 COCO classes, so gaps
+of about ±0.01 are noise too; re-test the top candidates on your own
+dataset before choosing a model for a specific task.
 
 ### Full results
 
 FPS is the mean over 100 timed iterations; mAP is mAP50-95 on
 `coco-val500`. Highlighted rows: 🎯 best mAP, ⚡ best FPS, ⚖️ best
 balance.
+
+**Sizes n and s, all devices:**
 
 | Model | Precision | FPS CPU | FPS GPU | FPS NPU | mAP CPU | mAP GPU | mAP NPU |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -112,17 +146,59 @@ balance.
 | yolov10s ⚖️ | int8 | 51.9 | 81.0 | 37.6 | 0.466 | 0.464 | 0.449 |
 | yolo11n | fp32 | 46.0 | 88.4 | 78.0 | 0.395 | 0.394 | 0.394 |
 | yolo11n | int8 | 68.0 | 89.5 | 73.6 | 0.394 | 0.395 | 0.215 |
-| yolo11s 🎯 | fp32 | 26.3 | 69.5 | 51.5 | 0.471 | 0.471 | 0.470 |
+| yolo11s | fp32 | 26.3 | 69.5 | 51.5 | 0.471 | 0.471 | 0.470 |
 | yolo11s ⚖️ | int8 | 46.1 | 82.0 | 56.7 | 0.466 | 0.466 | 0.456 |
 | yolo12n | fp32 | 41.2 | 83.0 | 54.4 | 0.409 | 0.409 | 0.409 |
 | yolo12n | int8 | 36.0 | 76.3 | 49.9 | 0.405 | 0.406 | 0.406 |
-| yolo12s 🎯 | fp32 | 22.5 | 50.2 | 32.5 | 0.486 | 0.485 | 0.485 |
+| yolo12s | fp32 | 22.5 | 50.2 | 32.5 | 0.486 | 0.485 | 0.485 |
 | yolo12s | int8 | 31.8 | 51.2 | 34.6 | 0.483 | 0.476 | 0.483 |
 | yolo26n ⚡ | fp32 | 54.7 | 94.2 | 78.4 | 0.413 | 0.413 | 0.413 |
 | yolo26n | int8 | 40.5 | 88.7 | 74.1 | 0.408 | 0.409 | 0.227 |
-| yolo26s 🎯 | fp32 | 27.0 | 71.8 | 54.3 | 0.487 | 0.487 | 0.487 |
+| yolo26s | fp32 | 27.0 | 71.8 | 54.3 | 0.487 | 0.487 | 0.487 |
 | yolo26s ⚖️ | int8 | 45.1 | 82.0 | 55.4 | 0.477 | 0.478 | 0.426 |
 
+**Sizes m, l and x, GPU only:**
+
+| Model | Precision | FPS | Latency p95 | mAP50-95 |
+| --- | --- | ---: | ---: | ---: |
+| yolov5mu | fp32 | 57.6 | 18.0 ms | 0.485 |
+| yolov5mu | int8 | 69.7 | 14.9 ms | 0.481 |
+| yolov5lu | fp32 | 43.9 | 23.3 ms | 0.518 |
+| yolov5lu | int8 | 58.4 | 17.7 ms | 0.512 |
+| yolov5xu | fp32 | 27.0 | 37.5 ms | 0.534 |
+| yolov5xu | int8 | 38.2 | 26.6 ms | 0.527 |
+| yolov8m | fp32 | 47.8 | 21.3 ms | 0.497 |
+| yolov8m | int8 | 60.3 | 17.9 ms | 0.495 |
+| yolov8l | fp32 | 35.0 | 30.1 ms | 0.537 |
+| yolov8l | int8 | 48.1 | 23.7 ms | 0.525 |
+| yolov8x | fp32 | 24.0 | 42.9 ms | 0.542 |
+| yolov8x | int8 | 36.1 | 28.8 ms | 0.544 |
+| yolov9m | fp32 | 39.9 | 25.5 ms | 0.503 |
+| yolov9m | int8 | 40.0 | 25.9 ms | 0.500 |
+| yolov10m | fp32 | 51.4 | 20.2 ms | 0.518 |
+| yolov10m | int8 | 60.9 | 16.9 ms | 0.511 |
+| yolov10l | fp32 | 39.0 | 26.3 ms | 0.535 |
+| yolov10l | int8 | 49.3 | 21.7 ms | 0.530 |
+| yolov10x 🎯 | fp32 | 29.6 | 34.5 ms | 0.547 |
+| yolov10x | int8 | 40.3 | 26.7 ms | 0.543 |
+| yolo11m | fp32 | 44.9 | 23.4 ms | 0.509 |
+| yolo11m | int8 | 62.7 | 16.8 ms | 0.506 |
+| yolo11l | fp32 | 40.6 | 25.5 ms | 0.530 |
+| yolo11l | int8 | 50.9 | 20.2 ms | 0.520 |
+| yolo11x 🎯 | fp32 | 24.8 | 42.1 ms | 0.545 |
+| yolo11x | int8 | 36.1 | 28.2 ms | 0.542 |
+| yolo12m | fp32 | 32.3 | 33.3 ms | 0.531 |
+| yolo12m | int8 | 32.7 | 34.4 ms | 0.527 |
+| yolo12l | fp32 | 22.0 | 46.7 ms | 0.536 |
+| yolo12l | int8 | 21.4 | 47.6 ms | 0.533 |
+| yolo12x | fp32 | 13.7 | 77.7 ms | 0.544 |
+| yolo12x | int8 | 14.2 | 71.3 ms | 0.541 |
+| yolo26m | fp32 | 48.3 | 22.0 ms | 0.538 |
+| yolo26m | int8 | 62.3 | 16.5 ms | 0.530 |
+| yolo26l | fp32 | 41.5 | 24.8 ms | 0.542 |
+| yolo26l | int8 | 51.5 | 20.2 ms | 0.545 |
+| yolo26x 🎯 | fp32 | 24.9 | 41.9 ms | 0.581 |
+| yolo26x | int8 | 36.1 | 28.2 ms | 0.570 |
 
 ## 1. Prerequisites
 

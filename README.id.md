@@ -10,12 +10,19 @@ lewat OpenVINO.
 
 ## Hasil di NUC 15 Pro
 
-Run default (`python -m yolobench.benchmark`: ukuran n+s, fp32+int8,
-CPU/GPU/NPU, 640 px, 10 iterasi warm-up + 100 iterasi terukur) pada
-2026-09-24. mAP50-95 diukur di `coco-val500`, yaitu subset tetap 500 gambar
-COCO val2017 yang tidak pernah dilihat model pretrained saat training.
-INT8 dikalibrasi di coco128. Data mentah:
-[results/summary_default_20260924_val500.csv](results/summary_default_20260924_val500.csv).
+Dua run pada 2026-09-24, keduanya di 640 px dengan 10 iterasi warm-up +
+100 iterasi terukur:
+
+- **Ukuran n dan s** di CPU, GPU, dan NPU, fp32 + int8 (run default,
+  `python -m yolobench.benchmark`). Data mentah:
+  [results/summary_default_20260924_val500.csv](results/summary_default_20260924_val500.csv).
+- **Ukuran m, l, dan x** hanya di GPU, fp32 + int8
+  (`--sizes m,l,x --devices GPU`). Data mentah:
+  [results/summary_mlx_gpu_20260924_val500.csv](results/summary_mlx_gpu_20260924_val500.csv).
+
+mAP50-95 diukur di `coco-val500`, yaitu subset tetap 500 gambar COCO
+val2017 yang tidak pernah dilihat model pretrained saat training. INT8
+dikalibrasi di coco128.
 
 | | |
 | --- | --- |
@@ -27,22 +34,40 @@ INT8 dikalibrasi di coco128. Data mentah:
 Sebagai cek kewajaran, yolo11n fp32 di sini mendapat 0.394, sedangkan
 angka resmi Ultralytics di val2017 penuh adalah 0.395.
 
+### Model terbaik per batas FPS
+
+Model paling akurat di GPU yang masih mencapai tiap batas frame rate.
+Di semua batas, pemenangnya YOLO26:
+
+| Butuh minimal | Model | FPS | Latensi p95 | mAP50-95 |
+| --- | --- | ---: | ---: | ---: |
+| ≥ 80 FPS | **yolo26s int8** | 82.0 | 13.3 ms | 0.478 |
+| ≥ 60 FPS | **yolo26m int8** | 62.3 | 16.5 ms | 0.530 |
+| ≥ 50 FPS | **yolo26l int8** | 51.5 | 20.2 ms | 0.545 |
+| ≥ 30 FPS | **yolo26x int8** | 36.1 | 28.2 ms | 0.570 |
+
+Untuk kamera 30 FPS, setiap frame harus selesai diproses dalam 33 ms,
+termasuk semua pekerjaan lain robot. yolo26l int8 (p95 20 ms) menyisakan
+ruang paling lega dengan akurasi tinggi; yolo26x int8 (p95 28 ms) sudah
+mepet.
+
 ### Highlight
 
-Semua highlight diukur di GPU, device tercepat. mAP fp32 sama di CPU, GPU,
-dan NPU (selisih maksimal ±0.002), jadi menjalankan model di device lain
-hanya mengorbankan kecepatan. Satu model hanya muncul sekali per kategori.
+Semua highlight diukur di GPU, device tercepat, dari semua ukuran. mAP fp32
+sama di CPU, GPU, dan NPU (selisih maksimal ±0.002), jadi menjalankan model
+di device lain hanya mengorbankan kecepatan. Satu model hanya muncul
+sekali per kategori.
 
 #### 🎯 mAP terbaik
 
-mAP50-95 tertinggi, tanpa melihat kecepatan. yolo26s dan yolo12s seri
-dalam akurasi, tapi yolo26s sekitar 40% lebih cepat:
+mAP50-95 tertinggi, tanpa melihat kecepatan. yolo26x unggul jauh; model
+`x` lain seri di sekitar 0.54–0.55:
 
 | Peringkat | Model | FPS | Latensi p95 | mAP50-95 |
 | :---: | --- | ---: | ---: | ---: |
-| 🥇 | **yolo26s fp32** | **71.8** | 14.6 ms | **0.487** |
-| 🥈 | **yolo12s fp32** | 50.2 | 20.9 ms | 0.485 |
-| 🥉 | **yolo11s fp32** | 69.5 | 15.5 ms | 0.471 |
+| 🥇 | **yolo26x fp32** | 24.9 | 41.9 ms | **0.581** |
+| 🥈 | **yolov10x fp32** | **29.6** | 34.5 ms | 0.547 |
+| 🥉 | **yolo11x fp32** | 24.8 | 42.1 ms | 0.545 |
 
 #### ⚡ FPS terbaik
 
@@ -58,7 +83,7 @@ FPS rata-rata tertinggi, tanpa melihat akurasi. FPS di GPU berubah sampai
 #### ⚖️ Paling seimbang
 
 mAP50-95 tertinggi di antara kombinasi yang mencapai minimal 80 FPS,
-sehingga cukup cepat untuk real-time:
+sehingga cukup cepat untuk real-time dengan ruang sisa yang lega:
 
 | Peringkat | Model | FPS | Latensi p95 | mAP50-95 |
 | :---: | --- | ---: | ---: | ---: |
@@ -68,29 +93,39 @@ sehingga cukup cepat untuk real-time:
 
 Temuan utama:
 
-- **yolo26s adalah pilihan terbaik secara keseluruhan**: model paling
-  akurat (0.487 di fp32), dan di int8 tetap 0.478 pada 82 FPS di GPU.
-- **iGPU Arc adalah device tercepat** untuk semua model: 1.2–3.2× CPU dan
-  1.0–2.2× NPU.
-- **`s` + int8 di GPU adalah pilihan paling efisien.** Dibanding `n` int8,
-  FPS-nya hanya turun sekitar 8% di GPU, tapi mAP naik sekitar +0.07
-  (yolo26: 88.7 → 82.0 FPS, 0.409 → 0.478).
+- **YOLO26 adalah family terbaik di setiap tingkat kecepatan**: dari
+  yolo26s int8 (0.478 pada 82 FPS) sampai yolo26x fp32, model paling
+  akurat yang diuji (0.581).
+- **yolo26l int8 setara dengan model `x` dari family lain** (0.545, sama
+  seperti yolo11x, yolov8x, dan yolov10x), tapi sekitar 1.3–1.4× lebih
+  cepat (51.5 FPS vs 36–40 FPS di int8).
+- **int8 paling menguntungkan untuk model besar**: di GPU, model `x`
+  menjadi 36–50% lebih cepat dengan penurunan mAP maksimal 0.011,
+  sedangkan model `n` tidak mendapat keuntungan (−12% sampai +1%). Pengecualiannya **YOLO12**, yang
+  tidak mendapat percepatan apa pun dari int8 di semua ukuran dan juga
+  family paling lambat (yolo12x: 14 FPS).
+- **iGPU Arc adalah device tercepat** untuk semua model n/s: 1.2–3.2× CPU
+  dan 1.0–2.2× NPU.
 - **Hindari int8 di NPU untuk yolo11n, yolo26n, yolov10n, dan yolo26s**:
   mAP-nya turun ke 0.215, 0.227, 0.246, dan 0.426, padahal model int8 yang
-  sama tetap akurat di CPU/GPU. Model lain aman memakai int8 di NPU.
-- Ke-84 kombinasi selesai (`ok`), tanpa crash.
+  sama tetap akurat di CPU/GPU. Model n/s lain aman memakai int8 di NPU;
+  model m/l/x tidak diuji di NPU.
+- Ke-122 kombinasi (84 + 38) selesai (`ok`), tanpa crash.
 
-Catatan: ini hasil satu kali run. Dibanding run sebelumnya untuk model yang
-sama, FPS berubah dengan median 4%, sampai 11% di GPU dan 15% di NPU, serta
-37% pada satu kasus CPU (yolov9t int8). Jadi selisih FPS yang kecil adalah
-noise. mAP memakai 500 gambar dan 80 kelas COCO; uji ulang kandidat teratas
-di dataset sendiri sebelum memilih model untuk tugas tertentu.
+Catatan: setiap kombinasi hanya dijalankan sekali. Dibanding run sebelumnya
+untuk model n/s yang sama, FPS berubah dengan median 4%, sampai 11% di GPU
+dan 15% di NPU, serta 37% pada satu kasus CPU (yolov9t int8). Jadi selisih
+FPS yang kecil adalah noise. mAP memakai 500 gambar dan 80 kelas COCO,
+sehingga selisih sekitar ±0.01 juga noise; uji ulang kandidat teratas di
+dataset sendiri sebelum memilih model untuk tugas tertentu.
 
 ### Hasil lengkap
 
 FPS adalah rata-rata dari 100 iterasi terukur; mAP adalah mAP50-95 di
 `coco-val500`. Baris highlight: 🎯 mAP terbaik, ⚡ FPS terbaik, ⚖️ paling
 seimbang.
+
+**Ukuran n dan s, semua device:**
 
 | Model | Presisi | FPS CPU | FPS GPU | FPS NPU | mAP CPU | mAP GPU | mAP NPU |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -112,16 +147,59 @@ seimbang.
 | yolov10s ⚖️ | int8 | 51.9 | 81.0 | 37.6 | 0.466 | 0.464 | 0.449 |
 | yolo11n | fp32 | 46.0 | 88.4 | 78.0 | 0.395 | 0.394 | 0.394 |
 | yolo11n | int8 | 68.0 | 89.5 | 73.6 | 0.394 | 0.395 | 0.215 |
-| yolo11s 🎯 | fp32 | 26.3 | 69.5 | 51.5 | 0.471 | 0.471 | 0.470 |
+| yolo11s | fp32 | 26.3 | 69.5 | 51.5 | 0.471 | 0.471 | 0.470 |
 | yolo11s ⚖️ | int8 | 46.1 | 82.0 | 56.7 | 0.466 | 0.466 | 0.456 |
 | yolo12n | fp32 | 41.2 | 83.0 | 54.4 | 0.409 | 0.409 | 0.409 |
 | yolo12n | int8 | 36.0 | 76.3 | 49.9 | 0.405 | 0.406 | 0.406 |
-| yolo12s 🎯 | fp32 | 22.5 | 50.2 | 32.5 | 0.486 | 0.485 | 0.485 |
+| yolo12s | fp32 | 22.5 | 50.2 | 32.5 | 0.486 | 0.485 | 0.485 |
 | yolo12s | int8 | 31.8 | 51.2 | 34.6 | 0.483 | 0.476 | 0.483 |
 | yolo26n ⚡ | fp32 | 54.7 | 94.2 | 78.4 | 0.413 | 0.413 | 0.413 |
 | yolo26n | int8 | 40.5 | 88.7 | 74.1 | 0.408 | 0.409 | 0.227 |
-| yolo26s 🎯 | fp32 | 27.0 | 71.8 | 54.3 | 0.487 | 0.487 | 0.487 |
+| yolo26s | fp32 | 27.0 | 71.8 | 54.3 | 0.487 | 0.487 | 0.487 |
 | yolo26s ⚖️ | int8 | 45.1 | 82.0 | 55.4 | 0.477 | 0.478 | 0.426 |
+
+**Ukuran m, l, dan x, hanya GPU:**
+
+| Model | Presisi | FPS | Latensi p95 | mAP50-95 |
+| --- | --- | ---: | ---: | ---: |
+| yolov5mu | fp32 | 57.6 | 18.0 ms | 0.485 |
+| yolov5mu | int8 | 69.7 | 14.9 ms | 0.481 |
+| yolov5lu | fp32 | 43.9 | 23.3 ms | 0.518 |
+| yolov5lu | int8 | 58.4 | 17.7 ms | 0.512 |
+| yolov5xu | fp32 | 27.0 | 37.5 ms | 0.534 |
+| yolov5xu | int8 | 38.2 | 26.6 ms | 0.527 |
+| yolov8m | fp32 | 47.8 | 21.3 ms | 0.497 |
+| yolov8m | int8 | 60.3 | 17.9 ms | 0.495 |
+| yolov8l | fp32 | 35.0 | 30.1 ms | 0.537 |
+| yolov8l | int8 | 48.1 | 23.7 ms | 0.525 |
+| yolov8x | fp32 | 24.0 | 42.9 ms | 0.542 |
+| yolov8x | int8 | 36.1 | 28.8 ms | 0.544 |
+| yolov9m | fp32 | 39.9 | 25.5 ms | 0.503 |
+| yolov9m | int8 | 40.0 | 25.9 ms | 0.500 |
+| yolov10m | fp32 | 51.4 | 20.2 ms | 0.518 |
+| yolov10m | int8 | 60.9 | 16.9 ms | 0.511 |
+| yolov10l | fp32 | 39.0 | 26.3 ms | 0.535 |
+| yolov10l | int8 | 49.3 | 21.7 ms | 0.530 |
+| yolov10x 🎯 | fp32 | 29.6 | 34.5 ms | 0.547 |
+| yolov10x | int8 | 40.3 | 26.7 ms | 0.543 |
+| yolo11m | fp32 | 44.9 | 23.4 ms | 0.509 |
+| yolo11m | int8 | 62.7 | 16.8 ms | 0.506 |
+| yolo11l | fp32 | 40.6 | 25.5 ms | 0.530 |
+| yolo11l | int8 | 50.9 | 20.2 ms | 0.520 |
+| yolo11x 🎯 | fp32 | 24.8 | 42.1 ms | 0.545 |
+| yolo11x | int8 | 36.1 | 28.2 ms | 0.542 |
+| yolo12m | fp32 | 32.3 | 33.3 ms | 0.531 |
+| yolo12m | int8 | 32.7 | 34.4 ms | 0.527 |
+| yolo12l | fp32 | 22.0 | 46.7 ms | 0.536 |
+| yolo12l | int8 | 21.4 | 47.6 ms | 0.533 |
+| yolo12x | fp32 | 13.7 | 77.7 ms | 0.544 |
+| yolo12x | int8 | 14.2 | 71.3 ms | 0.541 |
+| yolo26m | fp32 | 48.3 | 22.0 ms | 0.538 |
+| yolo26m | int8 | 62.3 | 16.5 ms | 0.530 |
+| yolo26l | fp32 | 41.5 | 24.8 ms | 0.542 |
+| yolo26l | int8 | 51.5 | 20.2 ms | 0.545 |
+| yolo26x 🎯 | fp32 | 24.9 | 41.9 ms | 0.581 |
+| yolo26x | int8 | 36.1 | 28.2 ms | 0.570 |
 
 ## 1. Prasyarat
 
