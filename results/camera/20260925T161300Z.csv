@@ -1,0 +1,2 @@
+stream,source,model,precision,device,track,seconds,source_fps,processed_fps,skipped_pct,infer_ms_mean,infer_ms_p95,infer_ms_p99,e2e_ms_p95,e2e_ms_p99,frame_budget_ms,verdict,cpu_load_mean,cpu_temp_max,streams_total
+0 | yolo26n int8 @ GPU,0,yolo26n,int8,GPU,False,60.0,18.7,18.7,3.7,13.0,21.4,22.8,21.9,23.3,33.3,OK,7.4,59.0,1

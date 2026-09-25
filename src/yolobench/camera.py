@@ -114,7 +114,11 @@ class Capture(threading.Thread):
         self.cap = cv2.VideoCapture(int(source) if source.isdigit() else source)
         if not self.cap.isOpened():
             raise SystemExit(f"[camera] can't open source '{source}'")
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        # Keep the driver's default buffer queue. With a single buffer, any
+        # short delay in this thread (e.g. waiting for the GIL while a worker
+        # post-processes or draws the preview) makes the driver drop the next
+        # frame, capping a 30 FPS camera at ~17-26 FPS. Latency stays low
+        # anyway because run() drains the queue and only the newest frame is used.
         # The pixel format must be set before the size: many USB cameras
         # only reach 30 FPS at 720p+ in MJPG, not in the default YUYV.
         if fourcc:
@@ -193,7 +197,7 @@ class Worker(threading.Thread):
             model = YOLO(str(self.ov_dir), task="detect")
             frame = None
             while frame is None and not self.capture.ended.is_set():
-                frame, last_id, _ = self.capture.latest()
+                frame, _, _ = self.capture.latest()
                 time.sleep(0.01)
             if frame is None:
                 raise RuntimeError("source delivered no frames")
@@ -204,8 +208,10 @@ class Worker(threading.Thread):
             self.ready.set()
             return
 
+        # Start counting from the newest frame after warm-up; frames the camera
+        # delivered while the model was warming up are not "skipped".
         self.stats.start = time.perf_counter()
-        self.stats.captured_start = self.capture.latest()[1]
+        last_id = self.stats.captured_start = self.capture.latest()[1]
         self.ready.set()
         while not self.stop.is_set() and not self.capture.ended.is_set():
             frame, frame_id, frame_time = self.capture.latest()
@@ -352,12 +358,28 @@ def main() -> None:
             captures[cfg.source].start()
         workers.append(Worker(cfg, captures[cfg.source], ov_dir, args.imgsz, args.track, show))
 
+    def stop_all() -> None:
+        # Workers first (they read from the captures), then the captures.
+        # Each capture releases its device when its loop ends; joining here
+        # keeps the process from exiting while a thread is still inside
+        # OpenCV/OpenVINO, which aborts with "terminate called without an
+        # active exception".
+        for w in workers:
+            w.stop.set()
+        for w in workers:
+            w.join(timeout=5)
+        for c in captures.values():
+            c.ended.set()
+        for c in captures.values():
+            c.join(timeout=5)
+
     print(f"[camera] loading and warming up {len(workers)} stream(s) ...")
     for w in workers:
         w.start()
     for w in workers:
         w.ready.wait()
         if w.error:
+            stop_all()
             raise SystemExit(f"[camera] {w.cfg.name}: {w.error}")
     print("[camera] running - press q in a preview window or Ctrl+C to stop\n")
 
@@ -398,12 +420,7 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        for w in workers:
-            w.stop.set()
-        for w in workers:
-            w.join(timeout=5)
-        for c in captures.values():
-            c.ended.set()
+        stop_all()
         if show:
             cv2.destroyAllWindows()
 
