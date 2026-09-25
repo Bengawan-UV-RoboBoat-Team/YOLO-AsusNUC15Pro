@@ -71,11 +71,28 @@ Semua perintah dijalankan dari root folder project di **bash** (Ubuntu
    Perhatikan baris `'MJPG'` dan `'YUYV'`. Banyak kamera hanya memberi
    30 FPS di 720p ke atas dalam format **MJPG**; di YUYV sering hanya 5–10
    FPS.
-4. **Windows:** kamera terdaftar di Device Manager → *Cameras*. Indeksnya
+4. **Ubuntu: atur kamera supaya tetap 30 FPS.** Tanpa langkah ini, kamera
+   C920 bisa turun ke 17–22 FPS di ruangan redup, karena ia sengaja
+   memperlambat frame rate untuk memperpanjang exposure.
+
+   ```bash
+   v4l2-ctl -d /dev/video0 -c exposure_dynamic_framerate=0 -c power_line_frequency=1
+   v4l2-ctl -d /dev/video0 --list-ctrls | grep -E "dynamic_framerate|power_line"
+   ```
+
+   Harus tampil `exposure_dynamic_framerate ... value=0` dan
+   `power_line_frequency ... value=1 (50 Hz)`. Pengaturan ini **hilang
+   setiap kali kamera dicabut atau NUC di-reboot**, kecuali aturan udev di
+   [CAMERA_CONFIG.md](CAMERA_CONFIG.md#3-buat-permanen-aturan-udev) sudah
+   dipasang. Penjelasan lengkap tiap pengaturan ada di
+   [CAMERA_CONFIG.md](CAMERA_CONFIG.md).
+5. **Windows:** kamera terdaftar di Device Manager → *Cameras*. Indeksnya
    0, 1, 2, ... sesuai urutan colok.
 
-**Cek lolos:** setiap kamera punya indeks yang diketahui, dan mode 30 FPS
-di resolusi yang dipilih tersedia (Ubuntu: terlihat di `--list-formats-ext`).
+**Cek lolos:** setiap kamera punya indeks yang diketahui, mode 30 FPS di
+resolusi yang dipilih tersedia (Ubuntu: terlihat di `--list-formats-ext`),
+dan `exposure_dynamic_framerate=0` serta `power_line_frequency=1` sudah
+aktif.
 
 ---
 
@@ -94,9 +111,10 @@ atau benda sehari-hari (kelas COCO) supaya ada yang terdeteksi.
 **Cek lolos:**
 
 - Di ringkasan akhir, `... of 30.0 fps processed`: angka kedua (FPS
-  kamera) **≈ 30**. Kalau jauh di bawah 30 (misalnya 10 atau 15), masalahnya
-  di kamera, bukan di model: coba mode lain dari Tahap 1 (`--fourcc MJPG`,
-  resolusi lebih kecil), lalu ulangi.
+  kamera) **≈ 30**. Kalau jauh di bawah 30 (misalnya 10 atau 17), masalahnya
+  di kamera, bukan di model: cek pengaturan Tahap 1 langkah 4, lalu mode
+  kamera (`--fourcc MJPG`, resolusi lebih kecil). Panduan lengkap di
+  [CAMERA_CONFIG.md](CAMERA_CONFIG.md#troubleshooting).
 - Status stream `-> OK`.
 - File `results/camera/<timestamp>.csv` tersimpan.
 
@@ -259,7 +277,9 @@ yang cukup panjang.
 | Gejala | Penyebab & solusi |
 | --- | --- |
 | `can't open source '0'` | Indeks salah atau kamera belum terdeteksi. Ubuntu: cek `v4l2-ctl --list-devices`, coba indeks genap berikutnya (2, 4, ...). Kamera sedang dipakai aplikasi lain (browser, Zoom, node ROS kamera)? Tutup dulu |
-| `source_fps` jauh di bawah 30 | Mode kamera: pakai `--fourcc MJPG`, resolusi lebih kecil, atau cek mode yang didukung (`--list-formats-ext`). Pencahayaan gelap juga bisa membuat kamera menurunkan FPS (auto exposure) |
+| `source_fps` 17–22 di ruangan redup | `exposure_dynamic_framerate` masih 1: kamera memperlambat frame rate untuk exposure lebih panjang. Jalankan Tahap 1 langkah 4 (lihat [CAMERA_CONFIG.md](CAMERA_CONFIG.md)) |
+| `source_fps` jauh di bawah 30 (mis. 10) | Mode kamera: pakai `--fourcc MJPG`, resolusi lebih kecil, atau cek mode yang didukung (`--list-formats-ext`) |
+| Pengaturan kamera hilang setelah reboot / colok ulang | Normal tanpa aturan udev; pasang aturan di [CAMERA_CONFIG.md](CAMERA_CONFIG.md#3-buat-permanen-aturan-udev) |
 | Dua kamera: satu gagal dibuka atau FPS-nya drop | Bandwidth USB kurang. Colok kedua kamera ke port USB 3 yang berbeda langsung di NUC, pakai MJPG, atau turunkan resolusi |
 | `device(s) not available on this machine: NPU` | Driver NPU / grup `render` belum beres, lihat TEST_STEP.md Tahap 1 |
 | `unknown model '...'` | Nama model salah ketik. Lihat daftarnya dengan `--list` |
