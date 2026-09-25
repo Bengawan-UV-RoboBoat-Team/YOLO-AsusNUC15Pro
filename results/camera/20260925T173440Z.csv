@@ -1,0 +1,2 @@
+stream,source,model,precision,device,track,seconds,source_fps,processed_fps,skipped_pct,infer_ms_mean,infer_ms_p95,infer_ms_p99,e2e_ms_p95,e2e_ms_p99,frame_budget_ms,verdict,cpu_load_mean,cpu_temp_max,streams_total
+0 | yolov10m int8 @ GPU,0,yolov10m,int8,GPU,False,30.1,30.0,30.0,0.0,15.0,15.9,16.6,16.5,17.2,33.3,OK,4.5,69.0,1
